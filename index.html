@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Latest News Podcasts: CBC, BBC, Al Jazeera, ABC</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#0b0c0d; --card:#15171a; --text:#e9eef2; --muted:#aab4be; --accent:#79b8ff; }
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text)}
+    header{padding:1rem 1.25rem;border-bottom:1px solid #222}
+    h1{margin:0;font-size:1.1rem;letter-spacing:.3px}
+    .wrap{max-width:920px;margin:0 auto;padding:1rem}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem}
+    .card{background:var(--card);border:1px solid #222;border-radius:14px;padding:1rem;display:flex;flex-direction:column;gap:.75rem}
+    .source{font-size:.8rem;color:var(--muted)}
+    .title{font-weight:600;line-height:1.2}
+    .meta{font-size:.85rem;color:var(--muted)}
+    .row{display:flex;justify-content:space-between;gap:.5rem;align-items:center}
+    .btn{appearance:none;border:1px solid #2a2f36;background:#0e1116;color:var(--text);padding:.45rem .7rem;border-radius:8px;font-size:.9rem;cursor:pointer}
+    .btn:hover{border-color:#39424d}
+    audio{width:100%}
+    .error{color:#ff9aa2;font-size:.9rem}
+    footer{color:var(--muted);font-size:.8rem;text-align:center;margin:1.5rem 0}
+    a{color:var(--accent);text-decoration:none}
+    a:hover{text-decoration:underline}
+    
+    /* Loading Animation */
+    .loading{text-align:center;padding:3rem 1rem;color:var(--muted)}
+    .spinner{display:inline-block;width:40px;height:40px;margin-bottom:1rem}
+    .spinner:after{content:'';display:block;width:32px;height:32px;margin:4px;border-radius:50%;border:3px solid var(--accent);border-color:var(--accent) transparent var(--accent) transparent;animation:spin 1.2s linear infinite}
+    @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+    .fade-out{opacity:0;transition:opacity 0.5s ease}
+    .fade-in{opacity:1;transition:opacity 0.5s ease}
+  </style>
+</head>
+<body>
+  <header><h1>Latest news podcasts: CBC · BBC · Al&nbsp;Jazeera · ABC Australia</h1></header>
+  <div class="wrap">
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <div>Loading latest news feeds...</div>
+      <div style="font-size:0.75rem;margin-top:0.5rem;opacity:0.7">Fetching from BBC, Al Jazeera, CBC & ABC</div>
+    </div>
+    <div id="cards" class="grid" aria-live="polite" style="display:none;"></div>
+    <div id="errors"></div>
+    <footer>Feeds load fresh on page open. Times shown in your local timezone.</footer>
+  </div>
+
+<script>
+(function(){
+  console.log("RSS script starting...");
+  
+  // Multiple CORS proxy options - try them in order
+  const CORS_PROXIES = [
+    "https://api.codetabs.com/v1/proxy?quest=",
+    "https://cors-anywhere.herokuapp.com/",
+    "https://api.allorigins.win/raw?url="
+  ];
+
+  // CBC is a group: pick the newest episode across these feeds.
+  const CBC_FEEDS = [
+    "http://www.cbc.ca/podcasting/includes/w6.xml",
+    "http://www.cbc.ca/podcasting/includes/worldthishour.xml", 
+    "http://www.cbc.ca/podcasting/includes/wr.xml",
+    "http://www.cbc.ca/podcasting/includes/thehouse.xml"
+  ];
+
+  // Non-CBC single feeds
+  const FEEDS = [
+    { key:"bbc-podcast",  label:"BBC Global News Podcast",     url:"https://podcasts.files.bbci.co.uk/p02nq0gn.rss" },
+    { key:"bbc-news",     label:"BBC News (International)",    url:"http://feeds.bbci.co.uk/news/rss.xml?edition=int" },
+    { key:"aje",          label:"Al Jazeera English",          url:"https://www.aljazeera.com/xml/rss/all.xml" },
+    { key:"abc",          label:"ABC (Australia) AM",          url:"https://www.abc.net.au/feeds/8486620/podcast.xml" },
+  ];
+
+  const cardsEl = document.getElementById("cards");
+  const errEl = document.getElementById("errors");
+  const loadingEl = document.getElementById("loading");
+
+  function esc(s){ 
+    return s == null ? "" : (""+s).replace(/[&<>"']/g, function(c) {
+      const escMap = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"};
+      return escMap[c];
+    }); 
+  }
+
+  function parsePubDate(d){
+    // Try native Date; many podcast feeds are RFC822/RFC1123 or ISO8601
+    const dt = new Date(d);
+    return isNaN(dt) ? null : dt;
+  }
+
+  function hoursAgoIfToday(dt){
+    if (!dt) return "";
+    const now = new Date();
+    if (dt.toDateString() === now.toDateString()){
+      const hrs = Math.max(0, Math.round((now - dt)/36e5));
+      return hrs + " hour" + (hrs===1?"":"s") + " ago";
+    }
+    return dt.toLocaleString(undefined, { dateStyle:"medium", timeStyle:"short" });
+  }
+
+  function firstItemFromRSS(xmlText){
+    const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+    if (doc.querySelector("parsererror")) throw new Error("Invalid XML or blocked by CORS");
+
+    // RSS 2.0
+    let item = doc.querySelector("channel > item");
+    // Atom
+    if (!item) item = doc.querySelector("entry");
+    if (!item) throw new Error("No items in feed");
+
+    const title = (item.querySelector("title")?.textContent || "").trim();
+    const pubRaw = (item.querySelector("pubDate, updated")?.textContent || "").trim();
+    const pubDate = parsePubDate(pubRaw);
+
+    // Prefer <enclosure url="...">
+    let audioUrl = item.querySelector("enclosure[url]")?.getAttribute("url");
+
+    // media:content fallback
+    if (!audioUrl){
+      const m = item.querySelector("media\\:content[url], content[url]");
+      if (m) audioUrl = m.getAttribute("url");
+    }
+
+    // GUID or link fallback if it looks like audio
+    if (!audioUrl){
+      const guid = item.querySelector("guid")?.textContent?.trim();
+      const link = item.querySelector("link")?.textContent?.trim() || item.querySelector("link[href]")?.getAttribute("href");
+      const pick = [guid, link].find(u => typeof u === "string" && /\.(mp3|m4a|aac|ogg)(\?|$)/i.test(u));
+      if (pick) audioUrl = pick;
+    }
+
+    // For news feeds without audio, use the article link instead
+    if (!audioUrl) {
+      const link = item.querySelector("link")?.textContent?.trim() || item.querySelector("link[href]")?.getAttribute("href");
+      audioUrl = link; // Will be used as article link instead of audio
+    }
+
+    return { title, pubDate, audioUrl };
+  }
+
+  function renderCard({label, title, pubDate, audioUrl}){
+    const when = hoursAgoIfToday(pubDate);
+    const el = document.createElement("div");
+    el.className = "card";
+    
+    // Check if this is an audio URL or a web link
+    const isAudio = audioUrl && /\.(mp3|m4a|aac|ogg|wav)(\?|$)/i.test(audioUrl);
+    
+    if (isAudio) {
+      // Render audio card
+      el.innerHTML = 
+        '<div class="source">' + esc(label) + '</div>' +
+        '<div class="title">' + (esc(title) || "(untitled episode)") + '</div>' +
+        '<div class="row">' +
+          '<div class="meta">' + (when ? esc(when) : "") + '</div>' +
+          '<button class="btn" type="button">Play</button>' +
+        '</div>' +
+        '<audio preload="none" controls src="' + esc(audioUrl) + '"></audio>';
+      
+      const btn = el.querySelector("button");
+      const audio = el.querySelector("audio");
+      btn.addEventListener("click", function() { 
+        audio.play(); 
+        btn.disabled = true; 
+        btn.textContent = "Playing"; 
+      });
+    } else {
+      // Render news article card
+      el.innerHTML = 
+        '<div class="source">' + esc(label) + '</div>' +
+        '<div class="title">' + (esc(title) || "(untitled article)") + '</div>' +
+        '<div class="row">' +
+          '<div class="meta">' + (when ? esc(when) : "") + '</div>' +
+          '<a href="' + esc(audioUrl) + '" target="_blank" class="btn">Read Article</a>' +
+        '</div>';
+    }
+    
+    return el;
+  }
+
+  function noteError(label, err){
+    console.error("Failed to load " + label + ":", err);
+    const p = document.createElement("p");
+    p.className = "error";
+    p.textContent = "Failed to load " + label + ": " + (err.message || err);
+    errEl.appendChild(p);
+  }
+
+  function debugLog(message, data) {
+    console.log("[RSS Debug] " + message, data || '');
+  }
+
+  async function fetchText(url){
+    debugLog("Attempting to fetch: " + url);
+    
+    // Try direct access first (many RSS feeds support CORS now)
+    try {
+      debugLog("Trying direct fetch");
+      const r = await fetch(url, { 
+        mode:"cors", 
+        cache:"no-store",
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      });
+      if (!r.ok) throw new Error("Direct HTTP " + r.status);
+      const text = await r.text();
+      debugLog("Successfully fetched directly, length: " + text.length);
+      return text;
+    } catch(directError) {
+      debugLog("Direct fetch failed (" + directError.message + "), trying CORS proxies");
+      
+      // Try each proxy in sequence
+      for (let i = 0; i < CORS_PROXIES.length; i++) {
+        try {
+          const proxy = CORS_PROXIES[i];
+          const proxyUrl = proxy + encodeURIComponent(url);
+          debugLog("Trying proxy " + (i+1) + ": " + proxy);
+          
+          const r = await fetch(proxyUrl, { 
+            cache:"no-store",
+            signal: AbortSignal.timeout(15000) // 15 second timeout
+          });
+          
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          const text = await r.text();
+          debugLog("Success with proxy " + (i+1) + ", length: " + text.length);
+          return text;
+        } catch(proxyError) {
+          debugLog("Proxy " + (i+1) + " failed: " + proxyError.message);
+          continue;
+        }
+      }
+      
+      throw new Error("All methods failed. Direct: " + directError.message + ". All " + CORS_PROXIES.length + " proxies also failed.");
+    }
+  }
+
+  async function loadSingleFeed(label, url){
+    try {
+      debugLog("Loading single feed: " + label);
+      const xml = await fetchText(url);
+      const info = firstItemFromRSS(xml);
+      debugLog("Parsed feed item:", { title: info.title, pubDate: info.pubDate, hasAudio: !!info.audioUrl });
+      cardsEl.appendChild(renderCard({ label: label, title: info.title, pubDate: info.pubDate, audioUrl: info.audioUrl }));
+      debugLog("Successfully added card for: " + label);
+    } catch(e) {
+      noteError(label, e);
+    }
+  }
+
+  async function loadCbcGroup(){
+    try{
+      debugLog("Loading CBC feeds: " + CBC_FEEDS.length + " feeds");
+      const xmls = await Promise.allSettled(CBC_FEEDS.map(u => fetchText(u)));
+      const items = [];
+      
+      for (let i = 0; i < xmls.length; i++){
+        const r = xmls[i];
+        const url = CBC_FEEDS[i];
+        if (r.status === "fulfilled"){
+          try { 
+            const item = firstItemFromRSS(r.value);
+            debugLog("Parsed CBC feed " + (i+1) + ":", { url: url, title: item.title, pubDate: item.pubDate });
+            items.push(item);
+          }
+          catch(e) { 
+            debugLog("Failed to parse CBC feed " + (i+1) + " (" + url + "):", e.message);
+          }
+        } else {
+          debugLog("Failed to fetch CBC feed " + (i+1) + " (" + url + "):", r.reason?.message || r.reason);
+        }
+      }
+      
+      if (items.length === 0) throw new Error("No CBC items parsed from " + CBC_FEEDS.length + " feeds");
+
+      // Pick newest by pubDate; if missing, push to end
+      items.sort(function(a,b) {
+        const ta = a.pubDate ? a.pubDate.getTime() : 0;
+        const tb = b.pubDate ? b.pubDate.getTime() : 0;
+        return tb - ta;
+      });
+      const latest = items[0];
+      debugLog("Selected latest CBC item:", { title: latest.title, pubDate: latest.pubDate });
+      cardsEl.appendChild(renderCard({ label: "CBC (latest across multiple shows)", title: latest.title, pubDate: latest.pubDate, audioUrl: latest.audioUrl }));
+    } catch(e){
+      noteError("CBC", e);
+    }
+  }
+
+  (async function init(){
+    debugLog("Starting RSS feed loading...");
+    
+    // Show loading animation
+    loadingEl.style.display = "block";
+    cardsEl.style.display = "none";
+    
+    // Load CBC feeds
+    debugLog("Loading CBC group...");
+    await loadCbcGroup();
+    
+    // Load individual feeds
+    debugLog("Loading " + FEEDS.length + " individual feeds...");
+    for (const f of FEEDS){
+      await loadSingleFeed(f.label, f.url);
+    }
+    
+    debugLog("Finished loading all feeds.");
+    
+    // Hide loading, show results with fade effect
+    loadingEl.classList.add("fade-out");
+    setTimeout(function() {
+      loadingEl.style.display = "none";
+      cardsEl.style.display = "grid";
+      cardsEl.classList.add("fade-in");
+    }, 500);
+    
+    // Show summary
+    const cardCount = cardsEl.children.length;
+    const errorCount = errEl.children.length;
+    console.log("Feed loading complete: " + cardCount + " cards loaded, " + errorCount + " errors");
+    
+    if (cardCount === 0) {
+      const p = document.createElement("p");
+      p.className = "error";
+      p.textContent = "No feeds could be loaded. Check the browser console for detailed error messages.";
+      errEl.appendChild(p);
+    }
+  })();
+})();
+</script>
+</body>
+</html>
