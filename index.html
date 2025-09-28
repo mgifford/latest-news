@@ -67,12 +67,12 @@
     
     <div id="content" style="display:none">
       <div id="english-section">
-        <h2 class="section-title">🇬🇧 English Podcasts</h2>
+        <h2 class="section-title">🇬🇧 English Podcasts (Latest First)</h2>
         <div id="cards-english" class="grid" aria-live="polite"></div>
       </div>
       
       <div id="french-section">
-        <h2 class="section-title">🇫🇷 Podcasts Français</h2>
+        <h2 class="section-title">🇫🇷 Podcasts Français (Plus Récents)</h2>
         <div id="cards-french" class="grid" aria-live="polite"></div>
       </div>
       
@@ -92,9 +92,13 @@
     "https://cors-anywhere.herokuapp.com/"
   ];
 
-  // CBC podcast feeds (reduced to most reliable one for now due to CORS issues)
+  // CBC podcast feeds (verified working URLs with audio content)
   const CBC_FEEDS = [
-    "https://www.cbc.ca/podcasting/includes/wr.xml"           // World Report (your working URL)
+    "https://www.cbc.ca/podcasting/includes/wr.xml",           // World Report (your working URL)
+    "https://www.cbc.ca/podcasting/includes/thehouse.xml",     // The House (Saturday politics)
+    "https://www.cbc.ca/podcasting/includes/hourlynews.xml",   // The World This Hour (hourly updates)
+    "https://www.cbc.ca/podcasting/includes/w6.xml",           // Your World Tonight (evening news)
+    "https://www.cbc.ca/podcasting/includes/atissue.xml"       // At Issue (political panel)
   ];
 
   // English podcast feeds (ordered by reliability - fastest first)
@@ -190,6 +194,12 @@
     const when = hoursAgoIfToday(pubDate);
     const el = document.createElement("div");
     el.className = "card";
+    
+    // Store raw timestamp for sorting (crucial for news ordering!)
+    if (pubDate) {
+      el.setAttribute('data-pubdate', pubDate.getTime());
+    }
+    
     el.innerHTML = 
       '<div class="source">' + esc(label) + '</div>' +
       '<div class="title">' + (esc(title) || "(untitled episode)") + '</div>' +
@@ -301,6 +311,26 @@
       noteError(label, e);
       return null;
     }
+  }
+
+  // CRITICAL: Sort podcast cards by publication date (newest first) for latest news
+  function sortCardsByDate(container) {
+    const cards = Array.from(container.children);
+    
+    cards.sort((cardA, cardB) => {
+      // Use stored timestamp for reliable sorting
+      const timestampA = parseInt(cardA.getAttribute('data-pubdate')) || 0;
+      const timestampB = parseInt(cardB.getAttribute('data-pubdate')) || 0;
+      
+      // Sort newest first (descending order) - CRITICAL for news relevance
+      return timestampB - timestampA;
+    });
+    
+    // Re-append cards in sorted order
+    container.innerHTML = '';
+    cards.forEach(card => container.appendChild(card));
+    
+    debugLog("✅ Sorted " + cards.length + " cards by date (newest first)");
   }
 
   async function loadCbcGroup(){
@@ -418,6 +448,12 @@
     
     // Wait for all feeds to complete (but they're already displayed as they load)
     await Promise.allSettled(loadPromises);
+    
+    // CRITICAL: Sort all cards by publication date (newest first) - this is essential for news!
+    sortCardsByDate(cardsEnglishEl);
+    if (FRENCH_FEEDS.length > 0) {
+      sortCardsByDate(cardsFrenchEl);
+    }
     
     // Cache English content for language switching
     const englishCards = Array.from(cardsEnglishEl.children);
