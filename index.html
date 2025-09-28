@@ -23,39 +23,14 @@
     footer{color:var(--muted);font-size:.8rem;text-align:center;margin:1.5rem 0}
     a{color:var(--accent);text-decoration:none}
     a:hover{text-decoration:underline}
-    
-    /* Loading Animation */
-    .loading{text-align:center;padding:3rem 1rem;color:var(--muted)}
-    .spinner{display:inline-block;width:40px;height:40px;margin-bottom:1rem}
-    .spinner:after{content:'';display:block;width:32px;height:32px;margin:4px;border-radius:50%;border:3px solid var(--accent);border-color:var(--accent) transparent var(--accent) transparent;animation:spin 1.2s linear infinite}
-    @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-    .fade-out{opacity:0;transition:opacity 0.5s ease}
-    .fade-in{opacity:1;transition:opacity 0.5s ease}
   </style>
 </head>
 <body>
-  <header><h1>Latest News Podcasts: English & French</h1></header>
+  <header><h1>Latest news podcasts: CBC · BBC · Al&nbsp;Jazeera · ABC Australia</h1></header>
   <div class="wrap">
-    <div id="loading" class="loading">
-      <div class="spinner"></div>
-      <div>Loading latest podcast feeds...</div>
-      <div style="font-size:0.75rem;margin-top:0.5rem;opacity:0.7">Fetching from BBC, CBC, ABC & RFI</div>
-    </div>
-    
-    <div id="content" style="display:none;">
-      <section>
-        <h2 style="color:var(--text);font-size:1rem;margin:0 0 1rem 0;padding-bottom:0.5rem;border-bottom:1px solid #333;">🇬🇧 English Podcasts</h2>
-        <div id="cards-english" class="grid" aria-live="polite"></div>
-      </section>
-      
-      <section style="margin-top:2rem;">
-        <h2 style="color:var(--text);font-size:1rem;margin:0 0 1rem 0;padding-bottom:0.5rem;border-bottom:1px solid #333;">🇫🇷 Podcasts en Français</h2>
-        <div id="cards-french" class="grid" aria-live="polite"></div>
-      </section>
-    </div>
-    
+    <div id="cards" class="grid" aria-live="polite"></div>
     <div id="errors"></div>
-    <footer>Podcast feeds refresh on page load. Times shown in your local timezone.</footer>
+    <footer>Feeds load fresh on page open. Times shown in your local timezone.</footer>
   </div>
 
 <script>
@@ -69,11 +44,11 @@
     "https://api.allorigins.win/raw?url="
   ];
 
-  // CBC is a group: pick the newest episode across these feeds.
+  // CBC podcast feeds (grouped - pick newest episode, ordered by your tested working URL first)
   const CBC_FEEDS = [
+    "https://www.cbc.ca/podcasting/includes/wr.xml",           // World Report (your working URL!)
     "https://www.cbc.ca/podcasting/includes/w6.xml",           // Your World Tonight
     "https://www.cbc.ca/podcasting/includes/hourlynews.xml",   // The World This Hour
-    "https://www.cbc.ca/podcasting/includes/wr.xml",           // World Report
     "https://www.cbc.ca/podcasting/includes/thehouse.xml"      // The House
   ];
 
@@ -81,20 +56,17 @@
   const FEEDS = [
     { key:"bbc-podcast",  label:"BBC Global News Podcast",     url:"https://podcasts.files.bbci.co.uk/p02nq0gn.rss" },
     { key:"abc",          label:"ABC (Australia) AM",          url:"https://www.abc.net.au/feeds/8486620/podcast.xml" },
+    { key:"aje",          label:"Al Jazeera Updates",          url:"https://omnycontent.com/d/playlist/9c074afa-3313-47e8-b802-a9f900789975/63048eda-2427-408a-b47c-ad5001293fca/6677d422-fd43-4aaa-be74-ad5001293fd8/podcast.rss" },
   ];
 
-  // French podcast feeds (actual RSS URLs)
+  // French podcast feeds
   const FRENCH_FEEDS = [
-    { key:"rfi-monde",    label:"RFI Le Monde",                  url:"https://rss.rfi.fr/liveaudio/rfi_monde/rss.xml" },
-    { key:"france-info",  label:"France Info",                  url:"https://www.francetvinfo.fr/titres.rss" },
-    { key:"rtl-news",     label:"RTL Actualités",               url:"https://www.rtl.fr/actu/rss.xml" },
+    { key:"rfi-francais", label:"RFI - Journal en français facile", url:"https://rss.rfi.fr/liveaudio/rfi_francais_facile/rss.xml" },
+    { key:"france24-fr", label:"France 24 - Actualités", url:"https://www.france24.com/fr/actualités/rss" }
   ];
 
-  const cardsEnglishEl = document.getElementById("cards-english");
-  const cardsFrenchEl = document.getElementById("cards-french");
-  const contentEl = document.getElementById("content");
+  const cardsEl = document.getElementById("cards");
   const errEl = document.getElementById("errors");
-  const loadingEl = document.getElementById("loading");
 
   function esc(s){ 
     return s == null ? "" : (""+s).replace(/[&<>"']/g, function(c) {
@@ -142,18 +114,25 @@
       if (m) audioUrl = m.getAttribute("url");
     }
 
+    // CBC contentLink fallback (special case for CBC feeds)
+    if (!audioUrl){
+      const contentLink = item.querySelector("contentLink")?.textContent?.trim();
+      if (contentLink && /\.(mp3|m4a|aac|ogg|wav)(\?|$)/i.test(contentLink)) {
+        audioUrl = contentLink;
+      }
+    }
+
     // GUID or link fallback if it looks like audio
     if (!audioUrl){
       const guid = item.querySelector("guid")?.textContent?.trim();
       const link = item.querySelector("link")?.textContent?.trim() || item.querySelector("link[href]")?.getAttribute("href");
-      const pick = [guid, link].find(u => typeof u === "string" && /\.(mp3|m4a|aac|ogg)(\?|$)/i.test(u));
+      const pick = [guid, link].find(u => typeof u === "string" && /\.(mp3|m4a|aac|ogg|wav)(\?|$)/i.test(u));
       if (pick) audioUrl = pick;
     }
 
-    // For news feeds without audio, use the article link instead
-    if (!audioUrl) {
-      const link = item.querySelector("link")?.textContent?.trim() || item.querySelector("link[href]")?.getAttribute("href");
-      audioUrl = link; // Will be used as article link instead of audio
+    // PODCASTS ONLY: Reject items without audio content
+    if (!audioUrl || !/\.(mp3|m4a|aac|ogg|wav)(\?|$)/i.test(audioUrl)) {
+      throw new Error("No audio content found - this appears to be an article feed, not a podcast");
     }
 
     return { title, pubDate, audioUrl };
@@ -163,39 +142,22 @@
     const when = hoursAgoIfToday(pubDate);
     const el = document.createElement("div");
     el.className = "card";
+    el.innerHTML = 
+      '<div class="source">' + esc(label) + '</div>' +
+      '<div class="title">' + (esc(title) || "(untitled episode)") + '</div>' +
+      '<div class="row">' +
+        '<div class="meta">' + (when ? esc(when) : "") + '</div>' +
+        '<button class="btn" type="button">Play</button>' +
+      '</div>' +
+      '<audio preload="none" controls src="' + esc(audioUrl) + '"></audio>';
     
-    // Check if this is an audio URL or a web link
-    const isAudio = audioUrl && /\.(mp3|m4a|aac|ogg|wav)(\?|$)/i.test(audioUrl);
-    
-    if (isAudio) {
-      // Render audio card
-      el.innerHTML = 
-        '<div class="source">' + esc(label) + '</div>' +
-        '<div class="title">' + (esc(title) || "(untitled episode)") + '</div>' +
-        '<div class="row">' +
-          '<div class="meta">' + (when ? esc(when) : "") + '</div>' +
-          '<button class="btn" type="button">Play</button>' +
-        '</div>' +
-        '<audio preload="none" controls src="' + esc(audioUrl) + '"></audio>';
-      
-      const btn = el.querySelector("button");
-      const audio = el.querySelector("audio");
-      btn.addEventListener("click", function() { 
-        audio.play(); 
-        btn.disabled = true; 
-        btn.textContent = "Playing"; 
-      });
-    } else {
-      // Render news article card
-      el.innerHTML = 
-        '<div class="source">' + esc(label) + '</div>' +
-        '<div class="title">' + (esc(title) || "(untitled article)") + '</div>' +
-        '<div class="row">' +
-          '<div class="meta">' + (when ? esc(when) : "") + '</div>' +
-          '<a href="' + esc(audioUrl) + '" target="_blank" class="btn">Read Article</a>' +
-        '</div>';
-    }
-    
+    const btn = el.querySelector("button");
+    const audio = el.querySelector("audio");
+    btn.addEventListener("click", function() { 
+      audio.play(); 
+      btn.disabled = true; 
+      btn.textContent = "Playing"; 
+    });
     return el;
   }
 
@@ -255,13 +217,13 @@
     }
   }
 
-  async function loadSingleFeed(label, url, targetContainer){
+  async function loadSingleFeed(label, url){
     try {
       debugLog("Loading single feed: " + label);
       const xml = await fetchText(url);
       const info = firstItemFromRSS(xml);
       debugLog("Parsed feed item:", { title: info.title, pubDate: info.pubDate, hasAudio: !!info.audioUrl });
-      targetContainer.appendChild(renderCard({ label: label, title: info.title, pubDate: info.pubDate, audioUrl: info.audioUrl }));
+      cardsEl.appendChild(renderCard({ label: label, title: info.title, pubDate: info.pubDate, audioUrl: info.audioUrl }));
       debugLog("Successfully added card for: " + label);
     } catch(e) {
       noteError(label, e);
@@ -301,98 +263,36 @@
       });
       const latest = items[0];
       debugLog("Selected latest CBC item:", { title: latest.title, pubDate: latest.pubDate });
-      cardsEnglishEl.appendChild(renderCard({ label: "CBC (latest across multiple shows)", title: latest.title, pubDate: latest.pubDate, audioUrl: latest.audioUrl }));
+      cardsEl.appendChild(renderCard({ label: "CBC (latest across multiple shows)", title: latest.title, pubDate: latest.pubDate, audioUrl: latest.audioUrl }));
     } catch(e){
       noteError("CBC", e);
     }
   }
 
   (async function init(){
-    debugLog("Starting podcast feed loading...");
+    debugLog("Starting RSS feed loading...");
     
-    // Show loading animation
-    loadingEl.style.display = "block";
-    contentEl.style.display = "none";
-    
-    // Load English feeds (fast loading first: BBC, ABC, then CBC last)
-    debugLog("Loading " + FEEDS.length + " English podcast feeds...");
-    for (const f of FEEDS){
-      await loadSingleFeed(f.label, f.url, cardsEnglishEl);
-    }
-    
-    // Load CBC feeds (slower/less reliable)
+    // Load CBC feeds
     debugLog("Loading CBC group...");
     await loadCbcGroup();
     
-    // Load French feeds
-    debugLog("Loading " + FRENCH_FEEDS.length + " French podcast feeds...");
-    for (const f of FRENCH_FEEDS){
-      await loadSingleFeed(f.label, f.url, cardsFrenchEl);
+    // Load individual feeds
+    debugLog("Loading " + FEEDS.length + " individual feeds...");
+    for (const f of FEEDS){
+      await loadSingleFeed(f.label, f.url);
     }
     
     debugLog("Finished loading all feeds.");
     
-    // Sort English cards by publication date (newest first)
-    const englishCards = Array.from(cardsEnglishEl.children);
-    englishCards.sort(function(a, b) {
-      const dateA = a.querySelector('.meta')?.textContent?.trim() || '';
-      const dateB = b.querySelector('.meta')?.textContent?.trim() || '';
-      
-      const hoursA = dateA.match(/(\d+) hours? ago/);
-      const hoursB = dateB.match(/(\d+) hours? ago/);
-      
-      if (hoursA && hoursB) {
-        return parseInt(hoursA[1]) - parseInt(hoursB[1]); // Fewer hours = more recent
-      }
-      
-      if (hoursA && !hoursB) return -1;
-      if (!hoursA && hoursB) return 1;
-      
-      return dateB.localeCompare(dateA);
-    });
-    
-    // Sort French cards by publication date (newest first)  
-    const frenchCards = Array.from(cardsFrenchEl.children);
-    frenchCards.sort(function(a, b) {
-      const dateA = a.querySelector('.meta')?.textContent?.trim() || '';
-      const dateB = b.querySelector('.meta')?.textContent?.trim() || '';
-      
-      const hoursA = dateA.match(/(\d+) hours? ago/);
-      const hoursB = dateB.match(/(\d+) hours? ago/);
-      
-      if (hoursA && hoursB) {
-        return parseInt(hoursA[1]) - parseInt(hoursB[1]);
-      }
-      
-      if (hoursA && !hoursB) return -1;
-      if (!hoursA && hoursB) return 1;
-      
-      return dateB.localeCompare(dateA);
-    });
-    
-    // Re-append sorted cards
-    englishCards.forEach(card => cardsEnglishEl.appendChild(card));
-    frenchCards.forEach(card => cardsFrenchEl.appendChild(card));
-    
-    // Hide loading, show results with fade effect
-    loadingEl.classList.add("fade-out");
-    setTimeout(function() {
-      loadingEl.style.display = "none";
-      contentEl.style.display = "block";
-      contentEl.classList.add("fade-in");
-    }, 500);
-    
     // Show summary
-    const englishCount = cardsEnglishEl.children.length;
-    const frenchCount = cardsFrenchEl.children.length;
-    const totalCards = englishCount + frenchCount;
+    const cardCount = cardsEl.children.length;
     const errorCount = errEl.children.length;
-    console.log("Feed loading complete: " + totalCards + " podcasts loaded (" + englishCount + " English, " + frenchCount + " French), " + errorCount + " errors");
+    console.log("Feed loading complete: " + cardCount + " cards loaded, " + errorCount + " errors");
     
-    if (totalCards === 0) {
+    if (cardCount === 0) {
       const p = document.createElement("p");
       p.className = "error";
-      p.textContent = "No podcast feeds could be loaded. Check the browser console for detailed error messages.";
+      p.textContent = "No feeds could be loaded. Check the browser console for detailed error messages.";
       errEl.appendChild(p);
     }
   })();
