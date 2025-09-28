@@ -40,9 +40,9 @@
     body.light-theme .control-btn:hover{background:#f3f4f6;border-color:#afb8c1}
     body.light-theme .section-title{border-color:#d0d7de}
 
-    /* Loading animation */
-    .loading{text-align:center;padding:2rem}
-    .spinner{display:inline-block;width:40px;height:40px;border:4px solid #333;border-radius:50%;border-top-color:var(--accent);animation:spin 1s ease-in-out infinite}
+    /* Loading animation - minimal since content appears immediately */
+    .loading{text-align:center;padding:1rem;font-size:0.9rem;color:var(--muted)}
+    .spinner{display:inline-block;width:20px;height:20px;border:2px solid #333;border-radius:50%;border-top-color:var(--accent);animation:spin 1s ease-in-out infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
     
     /* Fade animations */
@@ -85,19 +85,16 @@
 (function(){
   console.log("RSS script starting...");
   
-  // Multiple CORS proxy options - try them in order
+  // Multiple CORS proxy options - updated with more reliable proxies
   const CORS_PROXIES = [
+    "https://corsproxy.io/?",
     "https://api.codetabs.com/v1/proxy?quest=",
-    "https://cors-anywhere.herokuapp.com/",
-    "https://api.allorigins.win/raw?url="
+    "https://cors-anywhere.herokuapp.com/"
   ];
 
-  // CBC podcast feeds (grouped - pick newest episode, ordered by your tested working URL first)
+  // CBC podcast feeds (reduced to most reliable one for now due to CORS issues)
   const CBC_FEEDS = [
-    "https://www.cbc.ca/podcasting/includes/wr.xml",           // World Report (your working URL!)
-    "https://www.cbc.ca/podcasting/includes/w6.xml",           // Your World Tonight
-    "https://www.cbc.ca/podcasting/includes/hourlynews.xml",   // The World This Hour
-    "https://www.cbc.ca/podcasting/includes/thehouse.xml"      // The House
+    "https://www.cbc.ca/podcasting/includes/wr.xml"           // World Report (your working URL)
   ];
 
   // English podcast feeds (ordered by reliability - fastest first)
@@ -105,12 +102,12 @@
     { key:"bbc-podcast",  label:"BBC Global News Podcast",     url:"https://podcasts.files.bbci.co.uk/p02nq0gn.rss" },
     { key:"abc",          label:"ABC (Australia) AM",          url:"https://www.abc.net.au/feeds/8486620/podcast.xml" },
     { key:"aje",          label:"Al Jazeera Updates",          url:"https://omnycontent.com/d/playlist/9c074afa-3313-47e8-b802-a9f900789975/63048eda-2427-408a-b47c-ad5001293fca/6677d422-fd43-4aaa-be74-ad5001293fd8/podcast.rss" },
+    { key:"npr-news",     label:"NPR News Now",               url:"https://feeds.npr.org/500005/podcast.xml" },
   ];
 
-  // French podcast feeds
+  // French podcast feeds (temporarily reduced to working feeds only)
   const FRENCH_FEEDS = [
-    { key:"rfi-francais", label:"RFI - Journal en français facile", url:"https://rss.rfi.fr/liveaudio/rfi_francais_facile/rss.xml" },
-    { key:"france24-fr", label:"France 24 - Actualités", url:"https://www.france24.com/fr/actualités/rss" }
+    // Note: Many French RSS feeds have CORS issues, adding working alternatives when found
   ];
 
   const cardsEnglishEl = document.getElementById("cards-english");
@@ -221,26 +218,42 @@
   }
 
   function debugLog(message, data) {
-    console.log("[RSS Debug] " + message, data || '');
+    // Only log important events to reduce console spam
+    if (message.includes('✅') || message.includes('❌') || message.includes('Progressive loading')) {
+      console.log("🎙️ " + message, data || '');
+    }
+  }
+
+  function infoLog(message) {
+    console.log("📡 " + message);
   }
 
   async function fetchText(url){
     debugLog("Attempting to fetch: " + url);
     
-    // Try direct access first (many RSS feeds support CORS now)
+    // Try direct access first with browser-like headers
     try {
-      debugLog("Trying direct fetch");
+      debugLog("Trying direct fetch with browser headers");
       const r = await fetch(url, { 
         mode:"cors", 
         cache:"no-store",
-        signal: AbortSignal.timeout(10000) // 10 second timeout
+        signal: AbortSignal.timeout(10000),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'DNT': '1',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1'
+        }
       });
       if (!r.ok) throw new Error("Direct HTTP " + r.status);
       const text = await r.text();
-      debugLog("Successfully fetched directly, length: " + text.length);
+      debugLog("✅ Successfully fetched directly, length: " + text.length);
       return text;
     } catch(directError) {
-      debugLog("Direct fetch failed (" + directError.message + "), trying CORS proxies");
+      infoLog("Using CORS proxy for " + url.split('/')[2]);
       
       // Try each proxy in sequence
       for (let i = 0; i < CORS_PROXIES.length; i++) {
@@ -251,15 +264,22 @@
           
           const r = await fetch(proxyUrl, { 
             cache:"no-store",
-            signal: AbortSignal.timeout(15000) // 15 second timeout
+            signal: AbortSignal.timeout(8000),
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+              'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Referer': 'https://www.google.com/'
+            }
           });
           
           if (!r.ok) throw new Error("HTTP " + r.status);
           const text = await r.text();
-          debugLog("Success with proxy " + (i+1) + ", length: " + text.length);
+          debugLog("✅ Success with proxy " + (i+1) + ", length: " + text.length);
           return text;
         } catch(proxyError) {
-          debugLog("Proxy " + (i+1) + " failed: " + proxyError.message);
+          // Only log failures for the first attempt to reduce console spam
+          if (i === 0) debugLog("❌ Proxy " + (i+1) + " failed: " + (proxyError.name === 'TimeoutError' ? 'timeout' : proxyError.message));
           continue;
         }
       }
@@ -324,80 +344,96 @@
     }
   }
 
-  (async function init(){
-    debugLog("Starting RSS feed loading...");
-    
-    const englishCards = [];
-    const frenchCards = [];
-    
-    // Load English feeds (individual + CBC group)
-    for (const f of FEEDS){
-      try {
-        const card = await loadSingleFeed(f.label, f.url);
-        if (card) englishCards.push(card);
-      } catch(e) {
-        debugLog("Failed to load English feed " + f.label + ":", e.message);
-      }
-    }
-    
-    // Load CBC group for English
+  // Progressive loading function that shows cards as they load
+  async function loadAndDisplayFeed(label, url, isEnglish = true) {
     try {
-      const card = await loadCbcGroup();
-      if (card) englishCards.push(card);
-    } catch(e) {
-      debugLog("Failed to load CBC group:", e.message);
-    }
-    
-    // Load French feeds
-    for (const f of FRENCH_FEEDS){
-      try {
-        const card = await loadSingleFeed(f.label, f.url);
-        if (card) frenchCards.push(card);
-      } catch(e) {
-        debugLog("Failed to load French feed " + f.label + ":", e.message);
+      debugLog("Loading feed: " + label);
+      const card = await loadSingleFeed(label, url);
+      if (card) {
+        const targetContainer = isEnglish ? cardsEnglishEl : cardsFrenchEl;
+        targetContainer.appendChild(card);
+        
+        // Add fade-in animation to new card
+        card.style.opacity = '0';
+        setTimeout(() => {
+          card.style.transition = 'opacity 0.3s ease';
+          card.style.opacity = '1';
+        }, 10);
+        
+        debugLog("✅ Displayed: " + label);
       }
+    } catch(e) {
+      console.warn("⚠️ Could not load " + label + " (CORS/network issue)");
     }
+  }
+
+  // Special CBC group loader that displays immediately
+  async function loadAndDisplayCBC() {
+    try {
+      debugLog("Loading CBC group...");
+      const card = await loadCbcGroup();
+      if (card) {
+        cardsEnglishEl.appendChild(card);
+        
+        // Add fade-in animation
+        card.style.opacity = '0';
+        setTimeout(() => {
+          card.style.transition = 'opacity 0.3s ease';
+          card.style.opacity = '1';
+        }, 10);
+        
+        debugLog("✅ Displayed: CBC (latest across multiple shows)");
+      }
+    } catch(e) {
+      console.warn("⚠️ Could not load CBC feeds (CORS/network issue)");
+    }
+  }
+
+  (async function init(){
+    debugLog("Starting progressive RSS feed loading...");
     
-    // Sort by date (newest first)
-    const sortByDate = (cards) => cards.sort((a, b) => {
-      const dateA = a.querySelector('.meta')?.textContent || '';
-      const dateB = b.querySelector('.meta')?.textContent || '';
-      
-      // Prioritize "hours ago" items
-      const hoursA = dateA.includes('hour');
-      const hoursB = dateB.includes('hour');
-      
-      if (hoursA && !hoursB) return -1;
-      if (!hoursA && hoursB) return 1;
-      
-      return dateB.localeCompare(dateA);
+    // Show content area immediately (no waiting for all feeds)
+    loadingEl.style.display = "none";
+    contentEl.style.display = "block";
+    contentEl.style.opacity = "1";
+    
+    let totalLoaded = 0;
+    const totalFeeds = FEEDS.length + FRENCH_FEEDS.length + 1; // +1 for CBC group
+    
+    // Load feeds in parallel for speed, but display each as it completes
+    const loadPromises = [];
+    
+    // Start loading English feeds (fast ones first: BBC, ABC, Al Jazeera)
+    FEEDS.forEach(f => {
+      loadPromises.push(loadAndDisplayFeed(f.label, f.url, true));
     });
     
-    // Re-append sorted cards
-    sortByDate(englishCards).forEach(card => cardsEnglishEl.appendChild(card));
-    sortByDate(frenchCards).forEach(card => cardsFrenchEl.appendChild(card));
-
-    // Cache English content for 'Both' mode restoration
+    // Start loading CBC group (slower but comprehensive)
+    loadPromises.push(loadAndDisplayCBC());
+    
+    // Start loading French feeds
+    FRENCH_FEEDS.forEach(f => {
+      loadPromises.push(loadAndDisplayFeed(f.label, f.url, false));
+    });
+    
+    // Wait for all feeds to complete (but they're already displayed as they load)
+    await Promise.allSettled(loadPromises);
+    
+    // Cache English content for language switching
+    const englishCards = Array.from(cardsEnglishEl.children);
     const englishContent = englishCards.map(card => card.outerHTML);
     localStorage.setItem('cachedEnglishCards', JSON.stringify({
       timestamp: Date.now(),
       content: englishContent
     }));
     
-    // Hide loading, show results with fade effect
-    loadingEl.classList.add("fade-out");
-    setTimeout(function() {
-      loadingEl.style.display = "none";
-      contentEl.style.display = "block";
-      contentEl.classList.add("fade-in");
-    }, 500);
-    
-    // Show summary
+    // Final summary
     const englishCount = cardsEnglishEl.children.length;
     const frenchCount = cardsFrenchEl.children.length;
     const totalCards = englishCount + frenchCount;
     const errorCount = errEl.children.length;
-    console.log("Feed loading complete: " + totalCards + " podcasts loaded (" + englishCount + " English, " + frenchCount + " French), " + errorCount + " errors");
+    
+    console.log("🎙️ Loaded " + totalCards + " podcast" + (totalCards === 1 ? "" : "s") + " successfully!");
     
     if (totalCards === 0) {
       const p = document.createElement("p");
