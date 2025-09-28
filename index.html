@@ -13,8 +13,19 @@
     .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem}
     .card{background:var(--card);border:1px solid #222;border-radius:14px;padding:1rem;display:flex;flex-direction:column;gap:.75rem}
     .source{font-size:.8rem;color:var(--muted)}
-    .title{font-weight:600;line-height:1.2}
+    .title{font-weight:600;line-height:1.2;font-size:14pt;margin-bottom:0.5rem}
     .meta{font-size:.85rem;color:var(--muted)}
+    
+    /* Podcast image styles */
+    .card-content{display:flex;gap:1rem}
+    .podcast-image{width:80px;height:80px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--card);border:1px solid #333}
+    .card-info{flex:1;display:flex;flex-direction:column;gap:0.5rem}
+    
+    /* Audio controls */
+    .audio-controls{display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.5rem}
+    .speed-control, .sleep-control{display:flex;align-items:center;gap:0.25rem;font-size:0.8rem}
+    .speed-select, .sleep-select{background:var(--card);border:1px solid #333;color:var(--text);padding:0.25rem;border-radius:4px;font-size:0.75rem}
+    .sleep-status{font-size:0.75rem;color:var(--muted);margin-left:0.5rem}
     .row{display:flex;justify-content:space-between;gap:.5rem;align-items:center}
     .btn{appearance:none;border:1px solid #2a2f36;background:#0e1116;color:var(--text);padding:.45rem .7rem;border-radius:8px;font-size:.9rem;cursor:pointer}
     .btn:hover{border-color:#39424d}
@@ -39,6 +50,8 @@
     body.light-theme .control-btn{background:#f6f8fa;border-color:#d0d7de;color:var(--text)}
     body.light-theme .control-btn:hover{background:#f3f4f6;border-color:#afb8c1}
     body.light-theme .section-title{border-color:#d0d7de}
+    body.light-theme .podcast-image{border-color:#d0d7de}
+    body.light-theme .speed-select, body.light-theme .sleep-select{background:#ffffff;border-color:#d0d7de}
 
     /* Loading animation - minimal since content appears immediately */
     .loading{text-align:center;padding:1rem;font-size:0.9rem;color:var(--muted)}
@@ -159,6 +172,27 @@
     const pubRaw = (item.querySelector("pubDate, updated")?.textContent || "").trim();
     const pubDate = parsePubDate(pubRaw);
 
+    // Extract image - try multiple sources
+    let imageUrl = null;
+    
+    // Try episode-specific image first
+    imageUrl = item.querySelector("itunes\\:image")?.getAttribute("href");
+    if (!imageUrl) imageUrl = item.querySelector("media\\:thumbnail")?.getAttribute("url");
+    if (!imageUrl) imageUrl = item.querySelector("image url")?.textContent?.trim();
+    
+    // Fall back to podcast/channel image
+    if (!imageUrl) {
+      const channel = doc.querySelector("channel");
+      if (channel) {
+        imageUrl = channel.querySelector("itunes\\:image")?.getAttribute("href");
+        if (!imageUrl) imageUrl = channel.querySelector("image url")?.textContent?.trim();
+        if (!imageUrl) {
+          const img = channel.querySelector("image");
+          if (img) imageUrl = img.querySelector("url")?.textContent?.trim();
+        }
+      }
+    }
+
     // Prefer <enclosure url="...">
     let audioUrl = item.querySelector("enclosure[url]")?.getAttribute("url");
 
@@ -189,10 +223,10 @@
       throw new Error("No audio content found - this appears to be an article feed, not a podcast");
     }
 
-    return { title, pubDate, audioUrl };
+    return { title, pubDate, audioUrl, imageUrl };
   }
 
-  function renderCard({label, title, pubDate, audioUrl}){
+  function renderCard({label, title, pubDate, audioUrl, imageUrl}){
     const when = hoursAgoIfToday(pubDate);
     const el = document.createElement("div");
     el.className = "card";
@@ -202,22 +236,127 @@
       el.setAttribute('data-pubdate', pubDate.getTime());
     }
     
+    // Generate unique ID for this card
+    const cardId = 'card-' + Math.random().toString(36).substr(2, 9);
+    
     el.innerHTML = 
       '<div class="source">' + esc(label) + '</div>' +
-      '<div class="title">' + (esc(title) || "(untitled episode)") + '</div>' +
-      '<div class="row">' +
-        '<div class="meta">' + (when ? esc(when) : "") + '</div>' +
-        '<button class="btn" type="button">Play</button>' +
+      '<div class="card-content">' +
+        (imageUrl ? '<img class="podcast-image" src="' + esc(imageUrl) + '" alt="Podcast image" onerror="this.style.display=\'none\'">' : '') +
+        '<div class="card-info">' +
+          '<div class="title">' + (esc(title) || "(untitled episode)") + '</div>' +
+          '<div class="row">' +
+            '<div class="meta">' + (when ? esc(when) : "") + '</div>' +
+            '<button class="btn play-btn" type="button">Play</button>' +
+          '</div>' +
+          '<div class="audio-controls">' +
+            '<div class="speed-control">' +
+              '<label>Speed:</label>' +
+              '<select class="speed-select">' +
+                '<option value="0.5">0.5x</option>' +
+                '<option value="0.75">0.75x</option>' +
+                '<option value="1" selected>1x</option>' +
+                '<option value="1.25">1.25x</option>' +
+                '<option value="1.5">1.5x</option>' +
+                '<option value="2">2x</option>' +
+              '</select>' +
+            '</div>' +
+            '<div class="sleep-control">' +
+              '<label>Sleep:</label>' +
+              '<select class="sleep-select">' +
+                '<option value="0">Off</option>' +
+                '<option value="15">15 min</option>' +
+                '<option value="30">30 min</option>' +
+                '<option value="45">45 min</option>' +
+                '<option value="60">1 hour</option>' +
+              '</select>' +
+            '</div>' +
+            '<div class="sleep-status" id="sleep-' + cardId + '"></div>' +
+          '</div>' +
+        '</div>' +
       '</div>' +
-      '<audio preload="none" controls src="' + esc(audioUrl) + '"></audio>';
+      '<audio preload="none" controls src="' + esc(audioUrl) + '" id="audio-' + cardId + '"></audio>';
     
-    const btn = el.querySelector("button");
+    const btn = el.querySelector(".play-btn");
     const audio = el.querySelector("audio");
+    const speedSelect = el.querySelector(".speed-select");
+    const sleepSelect = el.querySelector(".sleep-select");
+    const sleepStatus = el.querySelector(".sleep-status");
+    
+    let sleepTimer = null;
+    let sleepInterval = null;
+    
+    // Play button functionality
     btn.addEventListener("click", function() { 
       audio.play(); 
       btn.disabled = true; 
       btn.textContent = "Playing"; 
     });
+    
+    // Reset button when audio ends or pauses
+    audio.addEventListener("ended", function() {
+      btn.disabled = false;
+      btn.textContent = "Play";
+      clearSleepTimer();
+    });
+    
+    audio.addEventListener("pause", function() {
+      btn.disabled = false;
+      btn.textContent = "Play";
+    });
+    
+    // Speed control
+    speedSelect.addEventListener("change", function() {
+      audio.playbackRate = parseFloat(this.value);
+    });
+    
+    // Sleep timer functionality
+    function clearSleepTimer() {
+      if (sleepTimer) clearTimeout(sleepTimer);
+      if (sleepInterval) clearInterval(sleepInterval);
+      sleepTimer = null;
+      sleepInterval = null;
+      sleepStatus.textContent = "";
+      audio.volume = 1;
+    }
+    
+    function startSleepTimer(minutes) {
+      clearSleepTimer();
+      
+      if (minutes === 0) return;
+      
+      const totalMs = minutes * 60 * 1000;
+      const fadeStartMs = totalMs - (2 * 60 * 1000); // Start fading 2 minutes before end
+      let remainingTime = minutes * 60; // seconds
+      
+      // Update countdown every second
+      sleepInterval = setInterval(() => {
+        remainingTime--;
+        const mins = Math.floor(remainingTime / 60);
+        const secs = remainingTime % 60;
+        sleepStatus.textContent = `Sleep: ${mins}:${secs.toString().padStart(2, '0')}`;
+        
+        // Start volume fade in last 2 minutes
+        const elapsed = (minutes * 60) - remainingTime;
+        if (elapsed * 1000 >= fadeStartMs) {
+          const fadeProgress = (elapsed * 1000 - fadeStartMs) / (2 * 60 * 1000);
+          audio.volume = Math.max(0, 1 - fadeProgress);
+        }
+        
+        if (remainingTime <= 0) {
+          audio.pause();
+          clearSleepTimer();
+        }
+      }, 1000);
+      
+      sleepStatus.textContent = `Sleep: ${minutes}:00`;
+    }
+    
+    sleepSelect.addEventListener("change", function() {
+      const minutes = parseInt(this.value);
+      startSleepTimer(minutes);
+    });
+    
     return el;
   }
 
@@ -306,7 +445,7 @@
       const xml = await fetchText(url);
       const info = firstItemFromRSS(xml);
       debugLog("Parsed feed item:", { title: info.title, pubDate: info.pubDate, hasAudio: !!info.audioUrl });
-      const card = renderCard({ label: label, title: info.title, pubDate: info.pubDate, audioUrl: info.audioUrl });
+      const card = renderCard({ label: label, title: info.title, pubDate: info.pubDate, audioUrl: info.audioUrl, imageUrl: info.imageUrl });
       debugLog("Successfully created card for: " + label);
       return card;
     } catch(e) {
