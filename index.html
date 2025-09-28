@@ -34,16 +34,28 @@
   </style>
 </head>
 <body>
-  <header><h1>Latest news podcasts: CBC · BBC · Al&nbsp;Jazeera · ABC Australia</h1></header>
+  <header><h1>Latest News Podcasts: English & French</h1></header>
   <div class="wrap">
     <div id="loading" class="loading">
       <div class="spinner"></div>
-      <div>Loading latest news feeds...</div>
-      <div style="font-size:0.75rem;margin-top:0.5rem;opacity:0.7">Fetching from BBC, Al Jazeera, CBC & ABC</div>
+      <div>Loading latest podcast feeds...</div>
+      <div style="font-size:0.75rem;margin-top:0.5rem;opacity:0.7">Fetching from BBC, CBC, ABC & RFI</div>
     </div>
-    <div id="cards" class="grid" aria-live="polite" style="display:none;"></div>
+    
+    <div id="content" style="display:none;">
+      <section>
+        <h2 style="color:var(--text);font-size:1rem;margin:0 0 1rem 0;padding-bottom:0.5rem;border-bottom:1px solid #333;">🇬🇧 English Podcasts</h2>
+        <div id="cards-english" class="grid" aria-live="polite"></div>
+      </section>
+      
+      <section style="margin-top:2rem;">
+        <h2 style="color:var(--text);font-size:1rem;margin:0 0 1rem 0;padding-bottom:0.5rem;border-bottom:1px solid #333;">🇫🇷 Podcasts en Français</h2>
+        <div id="cards-french" class="grid" aria-live="polite"></div>
+      </section>
+    </div>
+    
     <div id="errors"></div>
-    <footer>Feeds load fresh on page open. Times shown in your local timezone.</footer>
+    <footer>Podcast feeds refresh on page load. Times shown in your local timezone.</footer>
   </div>
 
 <script>
@@ -59,21 +71,28 @@
 
   // CBC is a group: pick the newest episode across these feeds.
   const CBC_FEEDS = [
-    "http://www.cbc.ca/podcasting/includes/w6.xml",
-    "http://www.cbc.ca/podcasting/includes/worldthishour.xml", 
-    "http://www.cbc.ca/podcasting/includes/wr.xml",
-    "http://www.cbc.ca/podcasting/includes/thehouse.xml"
+    "https://www.cbc.ca/podcasting/includes/w6.xml",           // Your World Tonight
+    "https://www.cbc.ca/podcasting/includes/hourlynews.xml",   // The World This Hour
+    "https://www.cbc.ca/podcasting/includes/wr.xml",           // World Report
+    "https://www.cbc.ca/podcasting/includes/thehouse.xml"      // The House
   ];
 
-  // Non-CBC single feeds
+  // English podcast feeds (ordered by reliability - fastest first)
   const FEEDS = [
     { key:"bbc-podcast",  label:"BBC Global News Podcast",     url:"https://podcasts.files.bbci.co.uk/p02nq0gn.rss" },
-    { key:"bbc-news",     label:"BBC News (International)",    url:"http://feeds.bbci.co.uk/news/rss.xml?edition=int" },
-    { key:"aje",          label:"Al Jazeera English",          url:"https://www.aljazeera.com/xml/rss/all.xml" },
     { key:"abc",          label:"ABC (Australia) AM",          url:"https://www.abc.net.au/feeds/8486620/podcast.xml" },
   ];
 
-  const cardsEl = document.getElementById("cards");
+  // French podcast feeds (actual RSS URLs)
+  const FRENCH_FEEDS = [
+    { key:"rfi-monde",    label:"RFI Le Monde",                  url:"https://rss.rfi.fr/liveaudio/rfi_monde/rss.xml" },
+    { key:"france-info",  label:"France Info",                  url:"https://www.francetvinfo.fr/titres.rss" },
+    { key:"rtl-news",     label:"RTL Actualités",               url:"https://www.rtl.fr/actu/rss.xml" },
+  ];
+
+  const cardsEnglishEl = document.getElementById("cards-english");
+  const cardsFrenchEl = document.getElementById("cards-french");
+  const contentEl = document.getElementById("content");
   const errEl = document.getElementById("errors");
   const loadingEl = document.getElementById("loading");
 
@@ -236,13 +255,13 @@
     }
   }
 
-  async function loadSingleFeed(label, url){
+  async function loadSingleFeed(label, url, targetContainer){
     try {
       debugLog("Loading single feed: " + label);
       const xml = await fetchText(url);
       const info = firstItemFromRSS(xml);
       debugLog("Parsed feed item:", { title: info.title, pubDate: info.pubDate, hasAudio: !!info.audioUrl });
-      cardsEl.appendChild(renderCard({ label: label, title: info.title, pubDate: info.pubDate, audioUrl: info.audioUrl }));
+      targetContainer.appendChild(renderCard({ label: label, title: info.title, pubDate: info.pubDate, audioUrl: info.audioUrl }));
       debugLog("Successfully added card for: " + label);
     } catch(e) {
       noteError(label, e);
@@ -282,48 +301,98 @@
       });
       const latest = items[0];
       debugLog("Selected latest CBC item:", { title: latest.title, pubDate: latest.pubDate });
-      cardsEl.appendChild(renderCard({ label: "CBC (latest across multiple shows)", title: latest.title, pubDate: latest.pubDate, audioUrl: latest.audioUrl }));
+      cardsEnglishEl.appendChild(renderCard({ label: "CBC (latest across multiple shows)", title: latest.title, pubDate: latest.pubDate, audioUrl: latest.audioUrl }));
     } catch(e){
       noteError("CBC", e);
     }
   }
 
   (async function init(){
-    debugLog("Starting RSS feed loading...");
+    debugLog("Starting podcast feed loading...");
     
     // Show loading animation
     loadingEl.style.display = "block";
-    cardsEl.style.display = "none";
+    contentEl.style.display = "none";
     
-    // Load CBC feeds
+    // Load English feeds (fast loading first: BBC, ABC, then CBC last)
+    debugLog("Loading " + FEEDS.length + " English podcast feeds...");
+    for (const f of FEEDS){
+      await loadSingleFeed(f.label, f.url, cardsEnglishEl);
+    }
+    
+    // Load CBC feeds (slower/less reliable)
     debugLog("Loading CBC group...");
     await loadCbcGroup();
     
-    // Load individual feeds
-    debugLog("Loading " + FEEDS.length + " individual feeds...");
-    for (const f of FEEDS){
-      await loadSingleFeed(f.label, f.url);
+    // Load French feeds
+    debugLog("Loading " + FRENCH_FEEDS.length + " French podcast feeds...");
+    for (const f of FRENCH_FEEDS){
+      await loadSingleFeed(f.label, f.url, cardsFrenchEl);
     }
     
     debugLog("Finished loading all feeds.");
+    
+    // Sort English cards by publication date (newest first)
+    const englishCards = Array.from(cardsEnglishEl.children);
+    englishCards.sort(function(a, b) {
+      const dateA = a.querySelector('.meta')?.textContent?.trim() || '';
+      const dateB = b.querySelector('.meta')?.textContent?.trim() || '';
+      
+      const hoursA = dateA.match(/(\d+) hours? ago/);
+      const hoursB = dateB.match(/(\d+) hours? ago/);
+      
+      if (hoursA && hoursB) {
+        return parseInt(hoursA[1]) - parseInt(hoursB[1]); // Fewer hours = more recent
+      }
+      
+      if (hoursA && !hoursB) return -1;
+      if (!hoursA && hoursB) return 1;
+      
+      return dateB.localeCompare(dateA);
+    });
+    
+    // Sort French cards by publication date (newest first)  
+    const frenchCards = Array.from(cardsFrenchEl.children);
+    frenchCards.sort(function(a, b) {
+      const dateA = a.querySelector('.meta')?.textContent?.trim() || '';
+      const dateB = b.querySelector('.meta')?.textContent?.trim() || '';
+      
+      const hoursA = dateA.match(/(\d+) hours? ago/);
+      const hoursB = dateB.match(/(\d+) hours? ago/);
+      
+      if (hoursA && hoursB) {
+        return parseInt(hoursA[1]) - parseInt(hoursB[1]);
+      }
+      
+      if (hoursA && !hoursB) return -1;
+      if (!hoursA && hoursB) return 1;
+      
+      return dateB.localeCompare(dateA);
+    });
+    
+    // Re-append sorted cards
+    englishCards.forEach(card => cardsEnglishEl.appendChild(card));
+    frenchCards.forEach(card => cardsFrenchEl.appendChild(card));
     
     // Hide loading, show results with fade effect
     loadingEl.classList.add("fade-out");
     setTimeout(function() {
       loadingEl.style.display = "none";
-      cardsEl.style.display = "grid";
-      cardsEl.classList.add("fade-in");
+      contentEl.style.display = "block";
+      contentEl.classList.add("fade-in");
     }, 500);
     
     // Show summary
-    const cardCount = cardsEl.children.length;
+    const englishCount = cardsEnglishEl.children.length;
+    const frenchCount = cardsFrenchEl.children.length;
+    const totalCards = englishCount + frenchCount;
     const errorCount = errEl.children.length;
-    console.log("Feed loading complete: " + cardCount + " cards loaded, " + errorCount + " errors");
+    console.log("Feed loading complete: " + totalCards + " podcasts loaded (" + englishCount + " English, " + frenchCount + " French), " + errorCount + " errors");
     
-    if (cardCount === 0) {
+    if (totalCards === 0) {
       const p = document.createElement("p");
       p.className = "error";
-      p.textContent = "No feeds could be loaded. Check the browser console for detailed error messages.";
+      p.textContent = "No podcast feeds could be loaded. Check the browser console for detailed error messages.";
       errEl.appendChild(p);
     }
   })();
