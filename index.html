@@ -92,13 +92,13 @@
     "https://cors-anywhere.herokuapp.com/"
   ];
 
-  // CBC podcast feeds (verified working URLs with audio content)
+  // CBC podcast feeds with labels for individual display
   const CBC_FEEDS = [
-    "https://www.cbc.ca/podcasting/includes/wr.xml",           // World Report (your working URL)
-    "https://www.cbc.ca/podcasting/includes/thehouse.xml",     // The House (Saturday politics)
-    "https://www.cbc.ca/podcasting/includes/hourlynews.xml",   // The World This Hour (hourly updates)
-    "https://www.cbc.ca/podcasting/includes/w6.xml",           // Your World Tonight (evening news)
-    "https://www.cbc.ca/podcasting/includes/atissue.xml"       // At Issue (political panel)
+    { label: "CBC World Report", url: "https://www.cbc.ca/podcasting/includes/wr.xml" },
+    { label: "CBC The House", url: "https://www.cbc.ca/podcasting/includes/thehouse.xml" },
+    { label: "CBC The World This Hour", url: "https://www.cbc.ca/podcasting/includes/hourlynews.xml" },
+    { label: "CBC Your World Tonight", url: "https://www.cbc.ca/podcasting/includes/w6.xml" },
+    { label: "CBC At Issue", url: "https://www.cbc.ca/podcasting/includes/atissue.xml" }
   ];
 
   // English podcast feeds (ordered by reliability - fastest first)
@@ -107,11 +107,13 @@
     { key:"abc",          label:"ABC (Australia) AM",          url:"https://www.abc.net.au/feeds/8486620/podcast.xml" },
     { key:"aje",          label:"Al Jazeera Updates",          url:"https://omnycontent.com/d/playlist/9c074afa-3313-47e8-b802-a9f900789975/63048eda-2427-408a-b47c-ad5001293fca/6677d422-fd43-4aaa-be74-ad5001293fd8/podcast.rss" },
     { key:"npr-news",     label:"NPR News Now",               url:"https://feeds.npr.org/500005/podcast.xml" },
+    { key:"democracy-now", label:"Democracy Now!",            url:"https://www.democracynow.org/podcast.xml" },
   ];
 
-  // French podcast feeds (temporarily reduced to working feeds only)
+  // French podcast feeds (verified working)
   const FRENCH_FEEDS = [
-    // Note: Many French RSS feeds have CORS issues, adding working alternatives when found
+    { key:"news-slow-fr",    label:"News in Slow French",           url:"https://nsf.libsyn.com/rss" },
+    { key:"france-inter",    label:"France Inter - L'invité 8h20",  url:"https://radiofrance-podcast.net/podcast09/rss_10239.xml" },
   ];
 
   const cardsEnglishEl = document.getElementById("cards-english");
@@ -333,44 +335,25 @@
     debugLog("✅ Sorted " + cards.length + " cards by date (newest first)");
   }
 
-  async function loadCbcGroup(){
-    try{
-      debugLog("Loading CBC feeds: " + CBC_FEEDS.length + " feeds");
-      const xmls = await Promise.allSettled(CBC_FEEDS.map(u => fetchText(u)));
-      const items = [];
-      
-      for (let i = 0; i < xmls.length; i++){
-        const r = xmls[i];
-        const url = CBC_FEEDS[i];
-        if (r.status === "fulfilled"){
-          try { 
-            const item = firstItemFromRSS(r.value);
-            debugLog("Parsed CBC feed " + (i+1) + ":", { url: url, title: item.title, pubDate: item.pubDate });
-            items.push(item);
-          }
-          catch(e) { 
-            debugLog("Failed to parse CBC feed " + (i+1) + " (" + url + "):", e.message);
-          }
-        } else {
-          debugLog("Failed to fetch CBC feed " + (i+1) + " (" + url + "):", r.reason?.message || r.reason);
-        }
+  // Load individual CBC feeds as separate cards
+  async function loadAndDisplayCbcFeed(cbcFeed) {
+    try {
+      debugLog("Loading CBC feed: " + cbcFeed.label);
+      const card = await loadSingleFeed(cbcFeed.label, cbcFeed.url);
+      if (card) {
+        cardsEnglishEl.appendChild(card);
+        
+        // Add fade-in animation
+        card.style.opacity = '0';
+        setTimeout(() => {
+          card.style.transition = 'opacity 0.3s ease';
+          card.style.opacity = '1';
+        }, 10);
+        
+        debugLog("✅ Displayed: " + cbcFeed.label);
       }
-      
-      if (items.length === 0) throw new Error("No CBC items parsed from " + CBC_FEEDS.length + " feeds");
-
-      // Pick newest by pubDate; if missing, push to end
-      items.sort(function(a,b) {
-        const ta = a.pubDate ? a.pubDate.getTime() : 0;
-        const tb = b.pubDate ? b.pubDate.getTime() : 0;
-        return tb - ta;
-      });
-      const latest = items[0];
-      debugLog("Selected latest CBC item:", { title: latest.title, pubDate: latest.pubDate });
-      const card = renderCard({ label: "CBC (latest across multiple shows)", title: latest.title, pubDate: latest.pubDate, audioUrl: latest.audioUrl });
-      return card;
-    } catch(e){
-      noteError("CBC", e);
-      return null;
+    } catch(e) {
+      console.warn("⚠️ Could not load " + cbcFeed.label + " (CORS/network issue)");
     }
   }
 
@@ -397,27 +380,7 @@
     }
   }
 
-  // Special CBC group loader that displays immediately
-  async function loadAndDisplayCBC() {
-    try {
-      debugLog("Loading CBC group...");
-      const card = await loadCbcGroup();
-      if (card) {
-        cardsEnglishEl.appendChild(card);
-        
-        // Add fade-in animation
-        card.style.opacity = '0';
-        setTimeout(() => {
-          card.style.transition = 'opacity 0.3s ease';
-          card.style.opacity = '1';
-        }, 10);
-        
-        debugLog("✅ Displayed: CBC (latest across multiple shows)");
-      }
-    } catch(e) {
-      console.warn("⚠️ Could not load CBC feeds (CORS/network issue)");
-    }
-  }
+
 
   (async function init(){
     debugLog("Starting progressive RSS feed loading...");
@@ -428,7 +391,7 @@
     contentEl.style.opacity = "1";
     
     let totalLoaded = 0;
-    const totalFeeds = FEEDS.length + FRENCH_FEEDS.length + 1; // +1 for CBC group
+    const totalFeeds = FEEDS.length + FRENCH_FEEDS.length + CBC_FEEDS.length;
     
     // Load feeds in parallel for speed, but display each as it completes
     const loadPromises = [];
@@ -438,8 +401,10 @@
       loadPromises.push(loadAndDisplayFeed(f.label, f.url, true));
     });
     
-    // Start loading CBC group (slower but comprehensive)
-    loadPromises.push(loadAndDisplayCBC());
+    // Start loading each CBC feed individually
+    CBC_FEEDS.forEach(cbcFeed => {
+      loadPromises.push(loadAndDisplayCbcFeed(cbcFeed));
+    });
     
     // Start loading French feeds
     FRENCH_FEEDS.forEach(f => {
