@@ -4,8 +4,10 @@
   <meta charset="utf-8" />
   <title>Latest News Podcasts: CBC, BBC, Al Jazeera, ABC</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Latest news podcasts from BBC, CBC, NPR, Democracy Now, ABC Australia, Al Jazeera, and French sources with global audio controls, sleep timer, and accessibility features." />
   <style>
-    :root { --bg:#0b0c0d; --card:#15171a; --text:#e9eef2; --muted:#aab4be; --accent:#79b8ff; }
+    /* WCAG AA compliant dark theme - 4.5:1 contrast ratio */
+    :root { --bg:#0d1117; --card:#161b22; --text:#f0f6fc; --muted:#8b949e; --accent:#58a6ff; }
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text)}
     header{padding:1rem 1.25rem;border-bottom:1px solid #222}
     h1{margin:0;font-size:1.1rem;letter-spacing:.3px}
@@ -48,6 +50,22 @@
     .global-control-group label{color:var(--muted);font-weight:500}
     .global-select{background:var(--card);border:1px solid #444;color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.85rem}
     .global-status{color:var(--accent);font-weight:500;font-size:0.9rem}
+    .cache-clear-btn{background:#e74c3c;color:white;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;transition:background-color 0.2s}
+    .cache-clear-btn:hover{background:#c0392b}
+    .content-hidden{display:none}
+    
+    /* Screen reader only content */
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    
+    /* Skip link for keyboard users */
+    .skip-link{position:absolute;top:-40px;left:6px;background:var(--accent);color:white;padding:8px;border-radius:4px;text-decoration:none;z-index:1000}
+    .skip-link:focus{top:6px}
+    
+    /* Focus styles for better keyboard navigation */
+    button:focus,select:focus,audio:focus{outline:2px solid var(--accent);outline-offset:2px}
+    
+    /* Ensure sufficient color contrast for interactive elements */
+    .control-btn,.cache-clear-btn{min-height:44px;min-width:44px}
     
     /* Language sections */
     #english-section, #french-section{margin-bottom:2rem}
@@ -55,7 +73,8 @@
     .section-title{font-size:1.2rem;margin-bottom:1rem;color:var(--accent);border-bottom:1px solid #333;padding-bottom:0.5rem}
     
     /* Light theme */
-    body.light-theme{--bg:#ffffff; --card:#f8f9fa; --text:#24292e; --muted:#586069; --accent:#0366d6}
+    /* WCAG AA compliant light theme - 4.5:1 contrast ratio */
+    body.light-theme{--bg:#ffffff; --card:#f6f8fa; --text:#24292f; --muted:#656d76; --accent:#0969da}
     body.light-theme .control-btn{background:#f6f8fa;border-color:#d0d7de;color:var(--text)}
     body.light-theme .control-btn:hover{background:#f3f4f6;border-color:#afb8c1}
     body.light-theme .section-title{border-color:#d0d7de}
@@ -75,18 +94,22 @@
   </style>
 </head>
 <body>
-  <header><h1>🎙️ Latest News Podcasts</h1></header>
+  <a href="#content" class="skip-link">Skip to main content</a>
+  <header role="banner">
+    <h1>🎙️ Latest News Podcasts</h1>
+  </header>
   <div class="wrap">
-    <div class="controls">
-      <button id="theme-toggle" class="control-btn">🌙 Dark</button>
-      <button id="language-toggle" class="control-btn">🇫🇷 Français</button>
+    <nav class="controls" role="navigation" aria-label="Page controls">
+      <button id="theme-toggle" class="control-btn" aria-label="Toggle between light and dark theme">🌙 Dark</button>
+      <button id="language-toggle" class="control-btn" aria-label="Switch language or show both languages">🇫🇷 Français</button>
       <button id="refresh-button" class="control-btn">🔄 Refresh</button>
     </div>
     
-    <div class="global-audio-controls">
+    <section class="global-audio-controls" role="region" aria-label="Global podcast controls">
+      <h2 class="sr-only">Global Audio Controls</h2>
       <div class="global-control-group">
-        <label>🎧 Global Speed:</label>
-        <select id="global-speed" class="global-select">
+        <label for="global-speed">🎵 Speed:</label>
+        <select id="global-speed" class="global-select" aria-label="Playback speed control">
           <option value="0.5">0.5x</option>
           <option value="0.75">0.75x</option>
           <option value="1" selected>1x</option>
@@ -96,37 +119,41 @@
         </select>
       </div>
       <div class="global-control-group">
-        <label>😴 Sleep Timer:</label>
-        <select id="global-sleep" class="global-select">
+        <label for="global-sleep">😴 Sleep Timer:</label>
+        <select id="global-sleep" class="global-select" aria-label="Sleep timer duration">
           <option value="0">Off</option>
+          <option value="5">5 min</option>
+          <option value="10">10 min</option>
           <option value="15">15 min</option>
-          <option value="30">30 min</option>
-          <option value="45">45 min</option>
-          <option value="60">1 hour</option>
+          <option value="20">20 min</option>
+          <option value="25">25 min</option>
         </select>
       </div>
-      <div id="global-sleep-status" class="global-status"></div>
-    </div>
-    
-    <div id="loading" class="loading">
+      <div id="global-sleep-status" class="global-status" aria-live="polite"></div>
+      <div class="global-control-group">
+        <button id="clear-cache-btn" class="cache-clear-btn" onclick="clearAllCache()" aria-label="Clear all cached data and refresh page">🧹 Clear Cache</button>
+      </div>
+    </section>    <div id="loading" class="loading">
       <div class="spinner"></div>
       <p>Loading latest podcasts...</p>
     </div>
     
-    <div id="content" style="display:none">
-      <div id="english-section">
-        <h2 class="section-title">🇬🇧 English Podcasts (Latest First)</h2>
-        <div id="cards-english" class="grid" aria-live="polite"></div>
-      </div>
+    <main id="content" class="content-hidden" role="main">
+      <section id="english-section" role="region" aria-labelledby="english-heading">
+        <h2 id="english-heading" class="section-title">🇬🇧 English Podcasts (Latest First)</h2>
+        <div id="cards-english" class="grid" aria-live="polite" role="feed" aria-label="English podcast episodes"></div>
+      </section>
       
-      <div id="french-section">
-        <h2 class="section-title">🇫🇷 Podcasts Français (Plus Récents)</h2>
-        <div id="cards-french" class="grid" aria-live="polite"></div>
-      </div>
+      <section id="french-section" role="region" aria-labelledby="french-heading">
+        <h2 id="french-heading" class="section-title">🇫🇷 Podcasts Français (Plus Récents)</h2>
+        <div id="cards-french" class="grid" aria-live="polite" role="feed" aria-label="French podcast episodes"></div>
+      </section>
       
-      <div id="errors"></div>
-      <footer>Feeds load fresh on page open. Times shown in your local timezone.</footer>
-    </div>
+      <div id="errors" role="alert" aria-live="assertive"></div>
+      <footer role="contentinfo">
+        <p>Feeds load fresh on page open. Times shown in your local timezone.</p>
+      </footer>
+    </main>
   </div>
 
 <script>
@@ -162,6 +189,7 @@
   const FRENCH_FEEDS = [
     { key:"news-slow-fr",    label:"News in Slow French",           url:"https://nsf.libsyn.com/rss" },
     { key:"france-inter",    label:"France Inter - L'invité 8h20",  url:"https://radiofrance-podcast.net/podcast09/rss_10239.xml" },
+    { key:"inner-french",    label:"InnerFrench Podcast",           url:"https://innerfrench.com/feed/" },
   ];
 
   const cardsEnglishEl = document.getElementById("cards-english");
@@ -169,6 +197,31 @@
   const errEl = document.getElementById("errors");
   const loadingEl = document.getElementById("loading");
   const contentEl = document.getElementById("content");
+
+  // Global set to track seen episodes and prevent duplicates
+  const seenEpisodes = new Set();
+  let duplicatesSkipped = 0;
+
+  // Cache version to invalidate old cached content when deduplication logic changes
+  const CACHE_VERSION = "v2_with_deduplication";
+  
+  // Clear old cache if version doesn't match
+  const currentCacheVersion = localStorage.getItem('cacheVersion');
+  if (currentCacheVersion !== CACHE_VERSION) {
+    localStorage.removeItem('cachedEnglishCards');
+    localStorage.setItem('cacheVersion', CACHE_VERSION);
+    console.log('🧹 Cleared old cache due to deduplication update');
+  }
+
+  // Function to manually clear all cache and reload (global scope)
+  window.clearAllCache = function() {
+    localStorage.removeItem('cachedEnglishCards');
+    localStorage.removeItem('cacheVersion');
+    seenEpisodes.clear();
+    duplicatesSkipped = 0;
+    console.log('🧹 All cache cleared manually');
+    location.reload();
+  };
 
   function esc(s){ 
     return s == null ? "" : (""+s).replace(/[&<>"']/g, function(c) {
@@ -191,6 +244,35 @@
       return hrs + " hour" + (hrs===1?"":"s") + " ago";
     }
     return dt.toLocaleString(undefined, { dateStyle:"medium", timeStyle:"short" });
+  }
+
+  function formatDuration(duration) {
+    if (!duration) return "";
+    
+    // Handle different duration formats from RSS feeds
+    if (/^\d+$/.test(duration)) {
+      // Seconds only (BBC format: "1944")
+      const totalSeconds = parseInt(duration);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      
+      if (hours > 0) {
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      } else {
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      }
+    } else if (/^\d{1,2}:\d{2}$/.test(duration)) {
+      // MM:SS format (Democracy Now: "59:00")
+      return duration;
+    } else if (/^\d{1,2}:\d{2}:\d{2}$/.test(duration)) {
+      // HH:MM:SS format (CBC: "00:10:08")
+      // Remove leading zero hours if present
+      return duration.replace(/^0+:/, '').replace(/^0(\d)/, '$1');
+    }
+    
+    // Return as-is if format not recognized
+    return duration;
   }
 
   function firstItemFromRSS(xmlText){
@@ -267,10 +349,30 @@
       throw new Error("No audio content found - this appears to be an article feed, not a podcast");
     }
 
-    return { title, pubDate, audioUrl, imageUrl, description, duration, author };
+    // Extract unique identifiers for deduplication
+    const guid = item.querySelector("guid")?.textContent?.trim();
+    const link = item.querySelector("link")?.textContent?.trim() || item.querySelector("link[href]")?.getAttribute("href");
+    
+    // Determine best unique identifier (priority: GUID > audioUrl > link)
+    const uniqueId = guid || audioUrl || link || title;
+
+    return { title, pubDate, audioUrl, imageUrl, description, duration, author, uniqueId };
   }
 
-  function renderCard({label, title, pubDate, audioUrl, imageUrl, description, duration, author}){
+  function renderCard({label, title, pubDate, audioUrl, imageUrl, description, duration, author, uniqueId}){
+    // Check for duplicates using unique identifier
+    if (uniqueId && seenEpisodes.has(uniqueId)) {
+      duplicatesSkipped++;
+      console.log(`🚫 Duplicate #${duplicatesSkipped}: "${title}" from ${label} (ID: ${uniqueId})`);
+      return null; // Skip rendering this card
+    }
+    
+    // Mark this episode as seen
+    if (uniqueId) {
+      seenEpisodes.add(uniqueId);
+      console.log(`✅ Episode added: "${title.substring(0, 50)}..." from ${label} (UniqueID: ${uniqueId.substring(0, 30)}...)`);
+    }
+    
     const when = hoursAgoIfToday(pubDate);
     const el = document.createElement("div");
     el.className = "card";
@@ -285,7 +387,11 @@
     
     // Clean up description (remove HTML tags and extra whitespace)
     const cleanDescription = description ? description.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '';
-    const hasDescription = cleanDescription && cleanDescription.length > 50;
+    
+    // Hide summaries for feeds that don't have meaningful episode descriptions
+    const feedsWithoutUsefulSummaries = ['NPR News Now', 'ABC (Australia) AM', 'Al Jazeera Updates'];
+    const shouldShowSummary = !feedsWithoutUsefulSummaries.includes(label);
+    const hasDescription = cleanDescription && cleanDescription.length > 50 && shouldShowSummary;
     
     el.innerHTML = 
       '<div class="source">' + esc(label) + '</div>' +
@@ -294,7 +400,11 @@
         '<div class="card-info">' +
           '<div class="title">' + (esc(title) || "(untitled episode)") + '</div>' +
           '<div class="row">' +
-            '<div class="meta">' + (when ? esc(when) : "") + '</div>' +
+            '<div class="meta">' + 
+              (when ? esc(when) : "") + 
+              (duration && when ? ' • ' : '') +
+              (duration ? '⏱️ ' + esc(formatDuration(duration)) : '') +
+            '</div>' +
             '<button class="btn play-btn" type="button">Play</button>' +
           '</div>' +
           (hasDescription ? 
@@ -303,7 +413,6 @@
               '<div class="summary-content">' +
                 '<div>' + esc(cleanDescription.substring(0, 500)) + (cleanDescription.length > 500 ? '...' : '') + '</div>' +
                 '<div class="summary-meta">' +
-                  (duration ? '<span>⏱️ ' + esc(duration) + '</span>' : '') +
                   (author ? '<span>👤 ' + esc(author) + '</span>' : '') +
                 '</div>' +
               '</div>' +
@@ -449,7 +558,8 @@
         imageUrl: info.imageUrl,
         description: info.description,
         duration: info.duration,
-        author: info.author
+        author: info.author,
+        uniqueId: info.uniqueId
       });
       debugLog("Successfully created card for: " + label);
       return card;
@@ -579,6 +689,11 @@
     const errorCount = errEl.children.length;
     
     console.log("🎙️ Loaded " + totalCards + " podcast" + (totalCards === 1 ? "" : "s") + " successfully!");
+    if (duplicatesSkipped > 0) {
+      console.log("🚫 Prevented " + duplicatesSkipped + " duplicate episode" + (duplicatesSkipped === 1 ? "" : "s") + " from showing.");
+    } else {
+      console.log("✅ No duplicate episodes detected.");
+    }
     
     if (totalCards === 0) {
       const p = document.createElement("p");
@@ -630,23 +745,9 @@
         frenchSection.style.display = 'block';
         languageToggle.textContent = '🇬🇧 English';
         
-        // Restore English cards from cache if available and English section is empty
-        if (cardsEnglishEl.children.length === 0) {
-          const cached = localStorage.getItem('cachedEnglishCards');
-          if (cached) {
-            try {
-              const { content, timestamp } = JSON.parse(cached);
-              // Only use cache if it's less than 1 hour old
-              if (Date.now() - timestamp < 3600000) {
-                content.forEach(cardHtml => {
-                  cardsEnglishEl.innerHTML += cardHtml;
-                });
-              }
-            } catch(e) {
-              console.warn('Failed to restore cached English cards:', e);
-            }
-          }
-        }
+        // Note: Cache restore disabled to prevent bypassing duplicate detection
+        // Cards will reload fresh when switching back to ensure deduplication works
+        console.log('🔄 Fresh loading enabled (cache restore disabled for deduplication)');
         break;
     }
     localStorage.setItem('languageState', languageState);
