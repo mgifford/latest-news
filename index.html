@@ -21,11 +21,13 @@
     .podcast-image{width:80px;height:80px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--card);border:1px solid #333}
     .card-info{flex:1;display:flex;flex-direction:column;gap:0.5rem}
     
-    /* Audio controls */
-    .audio-controls{display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-top:0.5rem}
-    .speed-control, .sleep-control{display:flex;align-items:center;gap:0.25rem;font-size:0.8rem}
-    .speed-select, .sleep-select{background:var(--card);border:1px solid #333;color:var(--text);padding:0.25rem;border-radius:4px;font-size:0.75rem}
-    .sleep-status{font-size:0.75rem;color:var(--muted);margin-left:0.5rem}
+    /* Expandable summary */
+    .episode-summary{margin-top:0.75rem}
+    .summary-toggle{background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.8rem;padding:0;text-decoration:underline}
+    .summary-toggle:hover{color:var(--text)}
+    .summary-content{margin-top:0.5rem;font-size:0.85rem;line-height:1.4;color:var(--muted);display:none}
+    .summary-content.expanded{display:block}
+    .summary-meta{display:flex;gap:1rem;font-size:0.75rem;color:var(--muted);margin-top:0.5rem;flex-wrap:wrap}
     .row{display:flex;justify-content:space-between;gap:.5rem;align-items:center}
     .btn{appearance:none;border:1px solid #2a2f36;background:#0e1116;color:var(--text);padding:.45rem .7rem;border-radius:8px;font-size:.9rem;cursor:pointer}
     .btn:hover{border-color:#39424d}
@@ -36,9 +38,16 @@
     a:hover{text-decoration:underline}
     
     /* UI Controls */
-    .controls{display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap}
+    .controls{display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center}
     .control-btn{padding:0.5rem 1rem;border:1px solid #333;background:#1a1a1a;color:var(--text);border-radius:6px;cursor:pointer;font-size:0.9rem}
     .control-btn:hover{background:#2a2a2a;border-color:#444}
+    
+    /* Global audio controls */
+    .global-audio-controls{display:flex;gap:1rem;align-items:center;padding:0.75rem 1rem;background:var(--card);border:1px solid #333;border-radius:8px;margin-bottom:1rem;flex-wrap:wrap}
+    .global-control-group{display:flex;align-items:center;gap:0.5rem;font-size:0.9rem}
+    .global-control-group label{color:var(--muted);font-weight:500}
+    .global-select{background:var(--card);border:1px solid #444;color:var(--text);padding:0.4rem 0.6rem;border-radius:4px;font-size:0.85rem}
+    .global-status{color:var(--accent);font-weight:500;font-size:0.9rem}
     
     /* Language sections */
     #english-section, #french-section{margin-bottom:2rem}
@@ -51,7 +60,8 @@
     body.light-theme .control-btn:hover{background:#f3f4f6;border-color:#afb8c1}
     body.light-theme .section-title{border-color:#d0d7de}
     body.light-theme .podcast-image{border-color:#d0d7de}
-    body.light-theme .speed-select, body.light-theme .sleep-select{background:#ffffff;border-color:#d0d7de}
+    body.light-theme .global-audio-controls{background:#f6f8fa;border-color:#d0d7de}
+    body.light-theme .global-select{background:#ffffff;border-color:#d0d7de}
 
     /* Loading animation - minimal since content appears immediately */
     .loading{text-align:center;padding:1rem;font-size:0.9rem;color:var(--muted)}
@@ -71,6 +81,31 @@
       <button id="theme-toggle" class="control-btn">🌙 Dark</button>
       <button id="language-toggle" class="control-btn">🇫🇷 Français</button>
       <button id="refresh-button" class="control-btn">🔄 Refresh</button>
+    </div>
+    
+    <div class="global-audio-controls">
+      <div class="global-control-group">
+        <label>🎧 Global Speed:</label>
+        <select id="global-speed" class="global-select">
+          <option value="0.5">0.5x</option>
+          <option value="0.75">0.75x</option>
+          <option value="1" selected>1x</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2">2x</option>
+        </select>
+      </div>
+      <div class="global-control-group">
+        <label>😴 Sleep Timer:</label>
+        <select id="global-sleep" class="global-select">
+          <option value="0">Off</option>
+          <option value="15">15 min</option>
+          <option value="30">30 min</option>
+          <option value="45">45 min</option>
+          <option value="60">1 hour</option>
+        </select>
+      </div>
+      <div id="global-sleep-status" class="global-status"></div>
     </div>
     
     <div id="loading" class="loading">
@@ -172,6 +207,15 @@
     const pubRaw = (item.querySelector("pubDate, updated")?.textContent || "").trim();
     const pubDate = parsePubDate(pubRaw);
 
+    // Extract episode metadata
+    const description = (item.querySelector("description")?.textContent || 
+                        item.querySelector("itunes\\:summary")?.textContent || 
+                        item.querySelector("summary")?.textContent || "").trim();
+    
+    const duration = (item.querySelector("itunes\\:duration")?.textContent || "").trim();
+    const author = (item.querySelector("itunes\\:author")?.textContent || 
+                   item.querySelector("author")?.textContent || "").trim();
+
     // Extract image - try multiple sources
     let imageUrl = null;
     
@@ -223,10 +267,10 @@
       throw new Error("No audio content found - this appears to be an article feed, not a podcast");
     }
 
-    return { title, pubDate, audioUrl, imageUrl };
+    return { title, pubDate, audioUrl, imageUrl, description, duration, author };
   }
 
-  function renderCard({label, title, pubDate, audioUrl, imageUrl}){
+  function renderCard({label, title, pubDate, audioUrl, imageUrl, description, duration, author}){
     const when = hoursAgoIfToday(pubDate);
     const el = document.createElement("div");
     el.className = "card";
@@ -239,6 +283,10 @@
     // Generate unique ID for this card
     const cardId = 'card-' + Math.random().toString(36).substr(2, 9);
     
+    // Clean up description (remove HTML tags and extra whitespace)
+    const cleanDescription = description ? description.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '';
+    const hasDescription = cleanDescription && cleanDescription.length > 50;
+    
     el.innerHTML = 
       '<div class="source">' + esc(label) + '</div>' +
       '<div class="card-content">' +
@@ -249,55 +297,46 @@
             '<div class="meta">' + (when ? esc(when) : "") + '</div>' +
             '<button class="btn play-btn" type="button">Play</button>' +
           '</div>' +
-          '<div class="audio-controls">' +
-            '<div class="speed-control">' +
-              '<label>Speed:</label>' +
-              '<select class="speed-select">' +
-                '<option value="0.5">0.5x</option>' +
-                '<option value="0.75">0.75x</option>' +
-                '<option value="1" selected>1x</option>' +
-                '<option value="1.25">1.25x</option>' +
-                '<option value="1.5">1.5x</option>' +
-                '<option value="2">2x</option>' +
-              '</select>' +
-            '</div>' +
-            '<div class="sleep-control">' +
-              '<label>Sleep:</label>' +
-              '<select class="sleep-select">' +
-                '<option value="0">Off</option>' +
-                '<option value="15">15 min</option>' +
-                '<option value="30">30 min</option>' +
-                '<option value="45">45 min</option>' +
-                '<option value="60">1 hour</option>' +
-              '</select>' +
-            '</div>' +
-            '<div class="sleep-status" id="sleep-' + cardId + '"></div>' +
-          '</div>' +
+          (hasDescription ? 
+            '<div class="episode-summary">' +
+              '<button class="summary-toggle" type="button">📖 Show Details</button>' +
+              '<div class="summary-content">' +
+                '<div>' + esc(cleanDescription.substring(0, 500)) + (cleanDescription.length > 500 ? '...' : '') + '</div>' +
+                '<div class="summary-meta">' +
+                  (duration ? '<span>⏱️ ' + esc(duration) + '</span>' : '') +
+                  (author ? '<span>👤 ' + esc(author) + '</span>' : '') +
+                '</div>' +
+              '</div>' +
+            '</div>' : '') +
         '</div>' +
       '</div>' +
-      '<audio preload="none" controls src="' + esc(audioUrl) + '" id="audio-' + cardId + '"></audio>';
+      '<audio preload="none" controls src="' + esc(audioUrl) + '" class="global-audio" id="audio-' + cardId + '"></audio>';
     
     const btn = el.querySelector(".play-btn");
     const audio = el.querySelector("audio");
-    const speedSelect = el.querySelector(".speed-select");
-    const sleepSelect = el.querySelector(".sleep-select");
-    const sleepStatus = el.querySelector(".sleep-status");
-    
-    let sleepTimer = null;
-    let sleepInterval = null;
+    const summaryToggle = el.querySelector(".summary-toggle");
+    const summaryContent = el.querySelector(".summary-content");
     
     // Play button functionality
     btn.addEventListener("click", function() { 
+      // Pause all other audio elements
+      document.querySelectorAll('audio').forEach(a => {
+        if (a !== audio) a.pause();
+      });
+      
       audio.play(); 
       btn.disabled = true; 
-      btn.textContent = "Playing"; 
+      btn.textContent = "Playing";
+      
+      // Apply global speed setting
+      const globalSpeed = document.getElementById('global-speed').value;
+      audio.playbackRate = parseFloat(globalSpeed);
     });
     
     // Reset button when audio ends or pauses
     audio.addEventListener("ended", function() {
       btn.disabled = false;
       btn.textContent = "Play";
-      clearSleepTimer();
     });
     
     audio.addEventListener("pause", function() {
@@ -305,57 +344,14 @@
       btn.textContent = "Play";
     });
     
-    // Speed control
-    speedSelect.addEventListener("change", function() {
-      audio.playbackRate = parseFloat(this.value);
-    });
-    
-    // Sleep timer functionality
-    function clearSleepTimer() {
-      if (sleepTimer) clearTimeout(sleepTimer);
-      if (sleepInterval) clearInterval(sleepInterval);
-      sleepTimer = null;
-      sleepInterval = null;
-      sleepStatus.textContent = "";
-      audio.volume = 1;
+    // Summary toggle functionality
+    if (summaryToggle && summaryContent) {
+      summaryToggle.addEventListener("click", function() {
+        const isExpanded = summaryContent.classList.contains('expanded');
+        summaryContent.classList.toggle('expanded');
+        summaryToggle.textContent = isExpanded ? '📖 Show Details' : '📖 Hide Details';
+      });
     }
-    
-    function startSleepTimer(minutes) {
-      clearSleepTimer();
-      
-      if (minutes === 0) return;
-      
-      const totalMs = minutes * 60 * 1000;
-      const fadeStartMs = totalMs - (2 * 60 * 1000); // Start fading 2 minutes before end
-      let remainingTime = minutes * 60; // seconds
-      
-      // Update countdown every second
-      sleepInterval = setInterval(() => {
-        remainingTime--;
-        const mins = Math.floor(remainingTime / 60);
-        const secs = remainingTime % 60;
-        sleepStatus.textContent = `Sleep: ${mins}:${secs.toString().padStart(2, '0')}`;
-        
-        // Start volume fade in last 2 minutes
-        const elapsed = (minutes * 60) - remainingTime;
-        if (elapsed * 1000 >= fadeStartMs) {
-          const fadeProgress = (elapsed * 1000 - fadeStartMs) / (2 * 60 * 1000);
-          audio.volume = Math.max(0, 1 - fadeProgress);
-        }
-        
-        if (remainingTime <= 0) {
-          audio.pause();
-          clearSleepTimer();
-        }
-      }, 1000);
-      
-      sleepStatus.textContent = `Sleep: ${minutes}:00`;
-    }
-    
-    sleepSelect.addEventListener("change", function() {
-      const minutes = parseInt(this.value);
-      startSleepTimer(minutes);
-    });
     
     return el;
   }
@@ -445,7 +441,16 @@
       const xml = await fetchText(url);
       const info = firstItemFromRSS(xml);
       debugLog("Parsed feed item:", { title: info.title, pubDate: info.pubDate, hasAudio: !!info.audioUrl });
-      const card = renderCard({ label: label, title: info.title, pubDate: info.pubDate, audioUrl: info.audioUrl, imageUrl: info.imageUrl });
+      const card = renderCard({ 
+        label: label, 
+        title: info.title, 
+        pubDate: info.pubDate, 
+        audioUrl: info.audioUrl, 
+        imageUrl: info.imageUrl,
+        description: info.description,
+        duration: info.duration,
+        author: info.author
+      });
       debugLog("Successfully created card for: " + label);
       return card;
     } catch(e) {
@@ -665,6 +670,95 @@
   refreshButton.addEventListener('click', () => {
     location.reload();
   });
+
+  // Global audio controls
+  const globalSpeedSelect = document.getElementById('global-speed');
+  const globalSleepSelect = document.getElementById('global-sleep');
+  const globalSleepStatus = document.getElementById('global-sleep-status');
+  
+  let globalSleepTimer = null;
+  let globalSleepInterval = null;
+  let currentAudio = null;
+  
+  // Global speed control
+  globalSpeedSelect.addEventListener('change', () => {
+    const speed = parseFloat(globalSpeedSelect.value);
+    // Apply to currently playing audio
+    document.querySelectorAll('audio').forEach(audio => {
+      if (!audio.paused) {
+        audio.playbackRate = speed;
+      }
+    });
+  });
+  
+  // Global sleep timer functionality
+  function clearGlobalSleepTimer() {
+    if (globalSleepTimer) clearTimeout(globalSleepTimer);
+    if (globalSleepInterval) clearInterval(globalSleepInterval);
+    globalSleepTimer = null;
+    globalSleepInterval = null;
+    globalSleepStatus.textContent = "";
+    // Reset volume for all audio elements
+    document.querySelectorAll('audio').forEach(audio => {
+      audio.volume = 1;
+    });
+  }
+  
+  function startGlobalSleepTimer(minutes) {
+    clearGlobalSleepTimer();
+    
+    if (minutes === 0) return;
+    
+    const totalMs = minutes * 60 * 1000;
+    const fadeStartMs = totalMs - (2 * 60 * 1000); // Start fading 2 minutes before end
+    let remainingTime = minutes * 60; // seconds
+    
+    // Update countdown every second
+    globalSleepInterval = setInterval(() => {
+      remainingTime--;
+      const mins = Math.floor(remainingTime / 60);
+      const secs = remainingTime % 60;
+      globalSleepStatus.textContent = `Sleep: ${mins}:${secs.toString().padStart(2, '0')}`;
+      
+      // Start volume fade in last 2 minutes
+      const elapsed = (minutes * 60) - remainingTime;
+      if (elapsed * 1000 >= fadeStartMs) {
+        const fadeProgress = (elapsed * 1000 - fadeStartMs) / (2 * 60 * 1000);
+        const volume = Math.max(0, 1 - fadeProgress);
+        // Apply fade to all audio elements
+        document.querySelectorAll('audio').forEach(audio => {
+          if (!audio.paused) {
+            audio.volume = volume;
+          }
+        });
+      }
+      
+      if (remainingTime <= 0) {
+        // Pause all audio
+        document.querySelectorAll('audio').forEach(audio => {
+          audio.pause();
+        });
+        clearGlobalSleepTimer();
+      }
+    }, 1000);
+    
+    globalSleepStatus.textContent = `Sleep: ${minutes}:00`;
+  }
+  
+  globalSleepSelect.addEventListener('change', () => {
+    const minutes = parseInt(globalSleepSelect.value);
+    startGlobalSleepTimer(minutes);
+  });
+
+  // Track currently playing audio for sleep timer
+  document.addEventListener('play', (e) => {
+    if (e.target.tagName === 'AUDIO') {
+      currentAudio = e.target;
+      // Apply current global speed to newly playing audio
+      const globalSpeed = parseFloat(globalSpeedSelect.value);
+      e.target.playbackRate = globalSpeed;
+    }
+  }, true);
 })();
 </script>
 </body>
