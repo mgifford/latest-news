@@ -67,6 +67,15 @@
     /* Ensure sufficient color contrast for interactive elements */
     .control-btn,.cache-clear-btn{min-height:44px;min-width:44px}
     
+    /* Skip controls for audio */
+    .skip-controls{display:flex;gap:0.5rem;margin-top:0.5rem;justify-content:center}
+    .skip-btn{background:var(--card);border:1px solid #444;color:var(--text);padding:8px 12px;border-radius:4px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:0.25rem;transition:all 0.2s}
+    .skip-btn:hover{background:var(--accent);color:white;border-color:var(--accent)}
+    .skip-btn:disabled{opacity:0.5;cursor:not-allowed}
+    body.light-theme .skip-btn{border-color:#d0d7de}
+    body.light-theme .skip-btn:hover{background:var(--accent);color:white}
+    .keyboard-shortcuts{font-size:11px;color:var(--muted);margin-top:0.5rem}
+    
     /* Language sections */
     #english-section, #french-section{margin-bottom:2rem}
     #french-section{display:none}
@@ -132,6 +141,9 @@
       <div id="global-sleep-status" class="global-status" aria-live="polite"></div>
       <div class="global-control-group">
         <button id="clear-cache-btn" class="cache-clear-btn" onclick="clearAllCache()" aria-label="Clear all cached data and refresh page">🧹 Clear Cache</button>
+      </div>
+      <div class="keyboard-shortcuts">
+        ⌨️ Shortcuts: ← Skip back 30s • → Skip forward 30s • Space Play/Pause
       </div>
     </section>    <div id="loading" class="loading">
       <div class="spinner"></div>
@@ -419,7 +431,11 @@
             '</div>' : '') +
         '</div>' +
       '</div>' +
-      '<audio preload="none" controls src="' + esc(audioUrl) + '" class="global-audio" id="audio-' + cardId + '"></audio>';
+      '<audio preload="none" controls src="' + esc(audioUrl) + '" class="global-audio" id="audio-' + cardId + '"></audio>' +
+      '<div class="skip-controls">' +
+        '<button class="skip-btn skip-back" type="button" aria-label="Skip back 30 seconds">⏪ -30s</button>' +
+        '<button class="skip-btn skip-forward" type="button" aria-label="Skip forward 30 seconds">⏩ +30s</button>' +
+      '</div>';
     
     const btn = el.querySelector(".play-btn");
     const audio = el.querySelector("audio");
@@ -453,6 +469,41 @@
       btn.textContent = "Play";
     });
     
+    // Skip controls functionality
+    const skipBackBtn = el.querySelector(".skip-back");
+    const skipForwardBtn = el.querySelector(".skip-forward");
+    
+    if (skipBackBtn) {
+      skipBackBtn.addEventListener("click", function() {
+        if (audio.duration && audio.currentTime) {
+          audio.currentTime = Math.max(0, audio.currentTime - 30);
+          console.log(`⏪ Skipped back 30s to ${Math.round(audio.currentTime)}s`);
+        }
+      });
+    }
+    
+    if (skipForwardBtn) {
+      skipForwardBtn.addEventListener("click", function() {
+        if (audio.duration) {
+          audio.currentTime = Math.min(audio.duration, audio.currentTime + 30);
+          console.log(`⏩ Skipped forward 30s to ${Math.round(audio.currentTime)}s`);
+        }
+      });
+    }
+    
+    // Update skip button states based on audio progress
+    audio.addEventListener("loadedmetadata", function() {
+      skipBackBtn.disabled = false;
+      skipForwardBtn.disabled = false;
+    });
+    
+    audio.addEventListener("timeupdate", function() {
+      // Disable skip back if at beginning
+      skipBackBtn.disabled = audio.currentTime < 5;
+      // Disable skip forward if near end
+      skipForwardBtn.disabled = audio.duration && (audio.currentTime > audio.duration - 5);
+    });
+
     // Summary toggle functionality
     if (summaryToggle && summaryContent) {
       summaryToggle.addEventListener("click", function() {
@@ -860,6 +911,35 @@
       e.target.playbackRate = globalSpeed;
     }
   }, true);
+
+  // Global keyboard shortcuts for skip functionality
+  document.addEventListener('keydown', (e) => {
+    // Only work if an audio is currently playing and no input is focused
+    if (currentAudio && !currentAudio.paused && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
+      switch(e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          currentAudio.currentTime = Math.max(0, currentAudio.currentTime - 30);
+          console.log(`⏪ Keyboard skip back 30s to ${Math.round(currentAudio.currentTime)}s`);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (currentAudio.duration) {
+            currentAudio.currentTime = Math.min(currentAudio.duration, currentAudio.currentTime + 30);
+            console.log(`⏩ Keyboard skip forward 30s to ${Math.round(currentAudio.currentTime)}s`);
+          }
+          break;
+        case ' ':
+          e.preventDefault();
+          if (currentAudio.paused) {
+            currentAudio.play();
+          } else {
+            currentAudio.pause();
+          }
+          break;
+      }
+    }
+  });
 })();
 </script>
 </body>
