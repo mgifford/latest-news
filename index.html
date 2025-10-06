@@ -17,6 +17,7 @@
     .source{font-size:.8rem;color:var(--muted)}
     .title{font-weight:600;line-height:1.2;font-size:14pt;margin-bottom:0.5rem}
     .meta{font-size:.85rem;color:var(--muted)}
+    .duration{color:var(--accent);font-weight:500}
     
     /* Podcast image styles */
     .card-content{display:flex;gap:1rem}
@@ -138,6 +139,15 @@
           <option value="25">25 min</option>
         </select>
       </div>
+      <div class="global-control-group">
+        <label for="duration-filter">⏱️ Duration:</label>
+        <select id="duration-filter" class="global-select" aria-label="Filter podcasts by duration">
+          <option value="all">All</option>
+          <option value="short">< 10 min</option>
+          <option value="medium">10-30 min</option>
+          <option value="long">> 30 min</option>
+        </select>
+      </div>
       <div id="global-sleep-status" class="global-status" aria-live="polite"></div>
       <div class="global-control-group">
         <button id="clear-cache-btn" class="cache-clear-btn" onclick="clearAllCache()" aria-label="Clear all cached data and refresh page">🧹 Clear Cache</button>
@@ -191,10 +201,14 @@
   // English podcast feeds (ordered by reliability - fastest first)
   const FEEDS = [
     { key:"bbc-podcast",  label:"BBC Global News Podcast",     url:"https://podcasts.files.bbci.co.uk/p02nq0gn.rss" },
+    { key:"bbc-newshour", label:"BBC World Service Newshour",  url:"https://podcasts.files.bbci.co.uk/p02nq0lx.rss" },
     { key:"abc",          label:"ABC (Australia) AM",          url:"https://www.abc.net.au/feeds/8486620/podcast.xml" },
     { key:"aje",          label:"Al Jazeera Updates",          url:"https://omnycontent.com/d/playlist/9c074afa-3313-47e8-b802-a9f900789975/63048eda-2427-408a-b47c-ad5001293fca/6677d422-fd43-4aaa-be74-ad5001293fd8/podcast.rss" },
     { key:"npr-news",     label:"NPR News Now",               url:"https://feeds.npr.org/500005/podcast.xml" },
     { key:"democracy-now", label:"Democracy Now!",            url:"https://www.democracynow.org/podcast.xml" },
+    { key:"pbs-newshour", label:"PBS NewsHour Audio",         url:"https://feeds.npr.org/381444908/podcast.xml" },
+    { key:"ap-news",      label:"AP News Minute",             url:"https://feeds.feedburner.com/APNewsMinute" },
+    { key:"cnn-5things",  label:"CNN 5 Things",               url:"https://feeds.megaphone.fm/CNI9300048629" },
   ];
 
   // French podcast feeds (verified working)
@@ -202,6 +216,8 @@
     { key:"news-slow-fr",    label:"News in Slow French",           url:"https://nsf.libsyn.com/rss" },
     { key:"france-inter",    label:"France Inter - L'invité 8h20",  url:"https://radiofrance-podcast.net/podcast09/rss_10239.xml" },
     { key:"inner-french",    label:"InnerFrench Podcast",           url:"https://innerfrench.com/feed/" },
+    { key:"rfi-afrique",     label:"RFI Afrique Matin",             url:"https://www.rfi.fr/fr/afrique/podcast.xml" },
+    { key:"franceinfo",      label:"France Info Journal",           url:"https://radiofrance-podcast.net/podcast09/rss_18974.xml" },
   ];
 
   const cardsEnglishEl = document.getElementById("cards-english");
@@ -261,6 +277,11 @@
   function formatDuration(duration) {
     if (!duration) return "";
     
+    // Handle estimated durations with ~ prefix
+    if (duration.startsWith('~')) {
+      return duration; // Return as-is for estimated times
+    }
+    
     // Handle different duration formats from RSS feeds
     if (/^\d+$/.test(duration)) {
       // Seconds only (BBC format: "1944")
@@ -285,6 +306,46 @@
     
     // Return as-is if format not recognized
     return duration;
+  }
+
+  function parseDurationToSeconds(duration) {
+    if (!duration) return 0;
+    
+    // Handle estimated durations with ~ prefix
+    let cleanDuration = duration;
+    if (duration.startsWith('~')) {
+      cleanDuration = duration.substring(1); // Remove the ~ prefix
+    }
+    
+    // Handle different duration formats from RSS feeds
+    if (/^\d+$/.test(cleanDuration)) {
+      // Seconds only (BBC format: "1944")
+      return parseInt(cleanDuration);
+    } else if (/^\d{1,2}:\d{2}$/.test(cleanDuration)) {
+      // MM:SS format (Democracy Now: "59:00")
+      const [minutes, seconds] = cleanDuration.split(':').map(n => parseInt(n));
+      return (minutes * 60) + seconds;
+    } else if (/^\d{1,2}:\d{2}:\d{2}$/.test(cleanDuration)) {
+      // HH:MM:SS format (CBC: "00:10:08")
+      const [hours, minutes, seconds] = cleanDuration.split(':').map(n => parseInt(n));
+      return (hours * 3600) + (minutes * 60) + seconds;
+    }
+    
+    // Return 0 if format not recognized
+    return 0;
+  }
+
+  function formatFileSize(bytes) {
+    if (!bytes || bytes <= 0) return "";
+    
+    const mb = bytes / (1024 * 1024);
+    if (mb >= 1000) {
+      return (mb / 1024).toFixed(1) + " GB";
+    } else if (mb >= 1) {
+      return mb.toFixed(1) + " MB";
+    } else {
+      return (bytes / 1024).toFixed(0) + " KB";
+    }
   }
 
   function firstItemFromRSS(xmlText){
@@ -333,6 +394,16 @@
 
     // Prefer <enclosure url="...">
     let audioUrl = item.querySelector("enclosure[url]")?.getAttribute("url");
+    let fileSize = null;
+    
+    // Extract file size from enclosure element (in bytes)
+    const enclosure = item.querySelector("enclosure[url]");
+    if (enclosure) {
+      const lengthAttr = enclosure.getAttribute("length");
+      if (lengthAttr && /^\d+$/.test(lengthAttr)) {
+        fileSize = parseInt(lengthAttr);
+      }
+    }
 
     // media:content fallback
     if (!audioUrl){
@@ -368,10 +439,10 @@
     // Determine best unique identifier (priority: GUID > audioUrl > link)
     const uniqueId = guid || audioUrl || link || title;
 
-    return { title, pubDate, audioUrl, imageUrl, description, duration, author, uniqueId };
+    return { title, pubDate, audioUrl, imageUrl, description, duration, author, uniqueId, fileSize };
   }
 
-  function renderCard({label, title, pubDate, audioUrl, imageUrl, description, duration, author, uniqueId}){
+  function renderCard({label, title, pubDate, audioUrl, imageUrl, description, duration, author, uniqueId, fileSize}){
     // Check for duplicates using unique identifier
     if (uniqueId && seenEpisodes.has(uniqueId)) {
       duplicatesSkipped++;
@@ -394,6 +465,40 @@
       el.setAttribute('data-pubdate', pubDate.getTime());
     }
     
+    // Generate estimated duration for feeds that don't provide explicit duration
+    let displayDuration = duration;
+    if (!duration && label) {
+      // Provide typical durations based on feed type
+      const typicalDurations = {
+        'NPR News Now': '5:00',
+        'BBC Global News Podcast': '30:00',
+        'BBC World Service Newshour': '50:00',
+        'ABC (Australia) AM': '30:00',
+        'Al Jazeera Updates': '15:00',
+        'Democracy Now!': '60:00',
+        'PBS NewsHour Audio': '45:00',
+        'AP News Minute': '2:00',
+        'CNN 5 Things': '8:00',
+        'RFI Afrique Matin': '15:00',
+        'France Info Journal': '20:00'
+      };
+      
+      if (typicalDurations[label]) {
+        displayDuration = `~${typicalDurations[label]}`;
+      }
+    }
+    
+    // Store duration in seconds for filtering (use displayDuration which includes estimates)
+    const durationInSeconds = parseDurationToSeconds(displayDuration);
+    el.setAttribute('data-duration-seconds', durationInSeconds);
+    
+    // Debug: Log duration parsing for troubleshooting
+    if (durationInSeconds > 0) {
+      console.log(`📊 Duration: "${label}" - Original: "${duration}" → Display: "${displayDuration}" → ${durationInSeconds}s (${(durationInSeconds/60).toFixed(1)} min)`);
+    } else if (fileSize) {
+      console.log(`📁 File Size: "${label}" - ${fileSize} bytes (${formatFileSize(fileSize)})`);
+    }
+    
     // Generate unique ID for this card
     const cardId = 'card-' + Math.random().toString(36).substr(2, 9);
     
@@ -414,8 +519,9 @@
           '<div class="row">' +
             '<div class="meta">' + 
               (when ? esc(when) : "") + 
-              (duration && when ? ' • ' : '') +
-              (duration ? '⏱️ ' + esc(formatDuration(duration)) : '') +
+              ((when && (displayDuration || fileSize)) ? ' • ' : '') +
+              (displayDuration ? '<span class="duration">⏱️ ' + esc(formatDuration(displayDuration)) + '</span>' : 
+               (fileSize ? '<span class="duration">📁 ' + esc(formatFileSize(fileSize)) + '</span>' : '')) +
             '</div>' +
             '<button class="btn play-btn" type="button">Play</button>' +
           '</div>' +
@@ -610,7 +716,8 @@
         description: info.description,
         duration: info.duration,
         author: info.author,
-        uniqueId: info.uniqueId
+        uniqueId: info.uniqueId,
+        fileSize: info.fileSize
       });
       debugLog("Successfully created card for: " + label);
       return card;
@@ -827,10 +934,71 @@
   const globalSpeedSelect = document.getElementById('global-speed');
   const globalSleepSelect = document.getElementById('global-sleep');
   const globalSleepStatus = document.getElementById('global-sleep-status');
+  const durationFilter = document.getElementById('duration-filter');
   
   let globalSleepTimer = null;
   let globalSleepInterval = null;
   let currentAudio = null;
+  
+  // Duration filtering function
+  function filterCardsByDuration(filterValue) {
+    const allCards = document.querySelectorAll('.card');
+    let visibleCount = 0;
+    
+    console.log(`🔍 Filtering by "${filterValue}". Found ${allCards.length} cards to check.`);
+    
+    allCards.forEach((card, index) => {
+      const durationSeconds = parseInt(card.getAttribute('data-duration-seconds')) || 0;
+      const durationMinutes = durationSeconds / 60;
+      const cardTitle = card.querySelector('.title')?.textContent || 'Unknown';
+      let shouldShow = true;
+      
+      // Debug: Log each card's duration data
+      if (index < 5) { // Only log first 5 to avoid spam
+        console.log(`Card ${index + 1}: "${cardTitle.substring(0, 30)}..." - ${durationSeconds}s (${durationMinutes.toFixed(1)} min)`);
+      }
+      
+      switch(filterValue) {
+        case 'short':
+          shouldShow = durationMinutes > 0 && durationMinutes < 10;
+          break;
+        case 'medium':
+          shouldShow = durationMinutes >= 10 && durationMinutes <= 30;
+          break;
+        case 'long':
+          shouldShow = durationMinutes > 30;
+          break;
+        case 'all':
+        default:
+          shouldShow = true;
+          break;
+      }
+      
+      if (shouldShow) {
+        card.style.display = '';
+        visibleCount++;
+      } else {
+        card.style.display = 'none';
+      }
+    });
+    
+    console.log(`🔍 Duration filter "${filterValue}": showing ${visibleCount} of ${allCards.length} podcasts`);
+  }
+  
+  // Duration filter event listener
+  durationFilter.addEventListener('change', () => {
+    const filterValue = durationFilter.value;
+    filterCardsByDuration(filterValue);
+    localStorage.setItem('durationFilter', filterValue);
+  });
+  
+  // Load saved duration filter
+  const savedDurationFilter = localStorage.getItem('durationFilter');
+  if (savedDurationFilter) {
+    durationFilter.value = savedDurationFilter;
+    // Apply filter after cards are loaded (use a small delay)
+    setTimeout(() => filterCardsByDuration(savedDurationFilter), 1000);
+  }
   
   // Global speed control
   globalSpeedSelect.addEventListener('change', () => {
